@@ -3,4 +3,5 @@ plams_workdir*
 *.xyz
 *.run
 *.txt
+*.out
 

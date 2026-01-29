@@ -451,19 +451,32 @@ def add_snapshot_to_db(
     conn.commit()
     conn.close()
 
+def add_snapshot_to_db_error(db_path: str, n_step: int) -> None:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO snapshots (n_step, n_choline, n_inter, comment)
+        VALUES (?, 0, 0, 'Error processing snapshot')
+    ''', (n_step,))
+    
+    conn.commit()
+    conn.close()
+
 def process_snapshot(
         input_xyz: str,
         output_run: str,
         db_path: str,
         distance_threshold: float = 5.0) -> bool:
 
+    n_step  = get_step_from_filename(input_xyz)
     cluster = Molecule(input_xyz)
     centre  = np.mean(cluster.as_array(), axis=0)
 
     # Safe check [zero atoms?]
     if len(cluster.atoms) == 0:
-        print(f"Warning: No atoms found in {input_xyz}")
-        return False
+        add_snapshot_to_db_error(db_path, n_step)
+        return True
 
     cluster.guess_bonds()
     molecules = cluster.separate()
@@ -477,13 +490,12 @@ def process_snapshot(
                                        choline_offsets, distance_threshold)
 
     write_adf_input(sorted_mols, output_run, intra, inter)
-    n_step = get_step_from_filename(input_xyz)
     add_snapshot_to_db(db_path, n_step, counts['choline'], intra, inter)
     
     return True
 
 # =========================================================================== #
-#                                      Main                                   #
+#                                  Main                                       #
 # =========================================================================== #
 
 init()
