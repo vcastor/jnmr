@@ -3,7 +3,7 @@
 # Update MD snapshots
 (
    cd mdStepsrkf
-   ./update_mdStepsrkf.sh
+   ./update_mdsteps.sh
 )
 
 # Convert RKF to XYZ
@@ -16,5 +16,8 @@ $AMSBIN/plams region_selector.py
 $AMSBIN/plams run_generator.py
 
 # Send data to Rameau
-./to_rameau.sh
+(
+  cd run_scripts
+  ./to_rameau.sh
+)
 

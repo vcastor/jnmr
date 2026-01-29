@@ -460,6 +460,11 @@ def process_snapshot(
     cluster = Molecule(input_xyz)
     centre  = np.mean(cluster.as_array(), axis=0)
 
+    # Safe check [zero atoms?]
+    if len(cluster.atoms) == 0:
+        print(f"Warning: No atoms found in {input_xyz}")
+        return False
+
     cluster.guess_bonds()
     molecules = cluster.separate()
 
