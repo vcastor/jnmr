@@ -2,7 +2,6 @@ import os
 import sys
 import glob
 import numpy as np
-# from scm.plams import Molecule, Atom, init, finish, KFFile
 
 def read_molecule_from_rkf(rkf_path: str, frame: int = -1) -> 'Molecule':
     """
@@ -62,7 +61,6 @@ for rkf in rkf_files:
         continue
     
     rkf_to_xyz(rkf, xyz)
-    print(f"Converted: {basename}")
 
 finish()
 
