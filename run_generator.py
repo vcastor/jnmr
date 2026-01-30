@@ -470,13 +470,14 @@ def process_snapshot(
         distance_threshold: float = 5.0) -> bool:
 
     n_step  = get_step_from_filename(input_xyz)
-    cluster = Molecule(input_xyz)
-    centre  = np.mean(cluster.as_array(), axis=0)
+    n_atoms = sum(1 for line in open(input_xyz)) - 2 # Safe check for empty file
 
-    # Safe check [zero atoms?]
-    if len(cluster.atoms) == 0:
+    if n_atoms < 1:
         add_snapshot_to_db_error(db_path, n_step)
         return True
+
+    cluster = Molecule(input_xyz)
+    centre  = np.mean(cluster.as_array(), axis=0)
 
     cluster.guess_bonds()
     molecules = cluster.separate()
