@@ -28,8 +28,8 @@ def find_j_value(filepath: str, atom1: int, atom2: int) -> Optional[float]:
     search_pattern = "Atom input numbers in the ADF calculation"
 
     result = subprocess.run(
-        f"grep -n '{search_pattern}' {filepath} | grep '{atom1}' | grep '{atom2}'",
-        capture_output=True, text=True
+        f"grep -n '{search_pattern}' {filepath} | grep {atom1} | grep {atom2}",
+        shell=True, capture_output=True, text=True
     )
 
     if result.returncode != 0 or not result.stdout.strip():
@@ -40,7 +40,7 @@ def find_j_value(filepath: str, atom1: int, atom2: int) -> Optional[float]:
 
     result = subprocess.run(
         f"sed -n '{j_line_num}p' {filepath}",
-        capture_output=True, text=True
+        shell=True, capture_output=True, text=True
     )
     
     if result.returncode == 0 and result.stdout.strip():
@@ -69,10 +69,7 @@ def update_j_value(cursor, n_step: int, table_type: str, row_id: int, j_value: f
     cursor.execute(f"UPDATE {table_name} SET J_fermi = ? WHERE id = ?", (j_value, row_id))
 
 
-def process_output_file(
-        cursor,
-        n_step: int,
-        filepath: str) -> Tuple[int, int, int]:
+def process_output_file(cursor, n_step: int, filepath: str):
     """
     Process output file for a given step.
     Returns (n_intra_updated, n_inter_updated, n_errors).
@@ -98,7 +95,7 @@ def process_output_file(
 
 config = {
     "db_path": "nmr_jcoupling.db",
-    "output_dir": "ouputAMS",
+    "output_dir": "amsoutput",
 }
 
 conn   = sqlite3.connect(config["db_path"])
