@@ -24,6 +24,11 @@ $AMSBIN/plams run_generator.py 2> /dev/null
 # Cleanup
 rm -rf plams_workdir*
 
+(
+  cd amsoutput
+  ./download_outputs.sh
+)
+
 # update de database
 ./output_reader.py
 
