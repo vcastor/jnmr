@@ -32,3 +32,6 @@ rm -rf plams_workdir*
 # update de database
 ./output_reader.py
 
+# warnings
+./output_warning.py
+
