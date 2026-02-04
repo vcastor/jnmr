@@ -14,7 +14,7 @@ def collect_j_values(cursor, steps, table_type):
         table_name = f"step_{n_step}_{table_type}"
         cursor.execute(f"SELECT J_fermi FROM {table_name} WHERE J_fermi IS NOT NULL")
         j_values.extend([row[0] for row in cursor.fetchall()])
-    return np.array(j_values)
+    return np.absolute(np.array(j_values))
 
 
 def collect_j_with_distance(cursor, steps):
@@ -49,7 +49,7 @@ def plot_intra_histogram(j_values, output="hist_intra.pdf"):
     ax.set_ylabel("Count")
     ax.set_title("Intra-molecular J coupling (CH2-CH2)")
     ax.axvline(np.mean(j_values), color='red', linestyle='--', label=f"mean = {np.mean(j_values):.2f} Hz")
-    ax.set_xlim(-10, 10)
+    ax.set_xlim(0, 15)
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=150)
@@ -65,7 +65,7 @@ def plot_inter_histogram(j_values, output="hist_inter.pdf"):
     ax.set_ylabel("Count")
     ax.set_title("Inter-molecular J coupling (NH2-CH3)")
     ax.axvline(np.mean(j_values), color='red', linestyle='--', label=f"mean = {np.mean(j_values):.2f} Hz")
-    ax.set_xlim(-10, 10)
+    ax.set_xlim(0, 15)
     ax.legend()
     fig.tight_layout()
     fig.savefig(output, dpi=150)
