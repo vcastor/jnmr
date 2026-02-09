@@ -18,7 +18,7 @@ $AMSBIN/plams run_generator.py 2> /dev/null
 # Generate SLURM launchers
 (
   cd run_scripts
-  bash launcher_creator.sh
+  ./launcher_creator.sh
 )
 
 # Upload .run/.sl to CRIANN

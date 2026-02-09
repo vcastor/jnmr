@@ -312,7 +312,6 @@ def inter_nh2_ch3_interactions(
 
     return interactions
 
-
 def write_adf_input(
         sorted_mols: List['Molecule'], filename: str,
         intra_interactions: Dict[int, List[Tuple[int, List[int]]]],
@@ -474,7 +473,7 @@ def add_snapshot_to_db(
         cursor.execute(f'''
             INSERT INTO {inter_table}
                 (H_pert, H_resp, distance, is_main)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?)
         ''', (inter['H_urea'], inter['H_choline'],
               inter['distance'], inter['is_main']))
 
@@ -570,8 +569,8 @@ for xyz_file in xyz_files:
         #     continue
 
         write_adf_input(sorted_mols, run_script, intra, inter,
-                        contributions=opts["contributions"],
-                        basisJ=opts["basisJ"])
+                        opts["contributions"],
+                        opts["basisJ"])
 
 finish()
 
