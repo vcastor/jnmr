@@ -1,33 +1,24 @@
 #!/bin/bash
+#
+# Submit all .sl files found in each variant subdirectory.
+# Run this ON CRIANN after uploading new run/sl files.
+#
 
-N=10
-CHECKPOINT=.checkpoint
-FILES=(MDStep*_cluster.sl)
+DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
+TOTAL=0
 
-# extract numeric step
-step_of() {
-   basename "$1" | sed -E 's/[^0-9]*([0-9]+).*/\1/'
-}
+for dir in "${DIRS[@]}"; do
+  [ -d "$dir" ] || continue
+  COUNT=0
 
-# initialise checkpoint
-if [ ! -f "$CHECKPOINT" ]; then
-   echo 20000 > "$CHECKPOINT"
-fi
+  for sl in "$dir"/*.sl; do
+    [ -f "$sl" ] || continue
+    sbatch "$sl"
+    COUNT=$((COUNT + 1))
+  done
 
-LAST=$(cat "$CHECKPOINT")
-COUNT=0
-NEXT=$LAST
-
-for sl in "${FILES[@]}"; do
-   step=$(step_of "$sl")
-
-   [ "$step" -le "$LAST" ] && continue
-   [ "$COUNT" -ge "$N" ] && break
-
-   sbatch "$sl"
-   NEXT="$step"
-   COUNT=$((COUNT+1))
+  [ "$COUNT" -gt 0 ] && echo "$dir: submitted $COUNT jobs"
+  TOTAL=$((TOTAL + COUNT))
 done
 
-[ "$COUNT" -gt 0 ] && echo "$NEXT" > "$CHECKPOINT"
-
+echo "Total submitted: $TOTAL"

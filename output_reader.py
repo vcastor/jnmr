@@ -4,15 +4,27 @@ import sqlite3
 import subprocess
 from typing import Optional, List, Tuple
 
+VARIANTS = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
+
+
 def get_pending_steps(cursor) -> List[int]:
     cursor.execute("SELECT n_step FROM snapshots WHERE comment IS NULL")
     return [row[0] for row in cursor.fetchall()]
 
 
-def check_jvalues_filled(cursor, n_step: int, table_type: str) -> bool:
-    """Check if J_fermi values are already filled for this step."""
-    table_name = f"step_{n_step}_{table_type}"
-    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE J_fermi IS NOT NULL")
+def table_exists(cursor, table_name: str) -> bool:
+    """Check if a table exists in the database."""
+    cursor.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,))
+    return cursor.fetchone()[0] > 0
+
+
+def check_jcolumn_filled(cursor, table_name: str, j_col: str) -> bool:
+    """Check if a specific J column is fully filled in a table."""
+    if not table_exists(cursor, table_name):
+        return False
+    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE {j_col} IS NOT NULL")
     filled = cursor.fetchone()[0]
     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
     total = cursor.fetchone()[0]
@@ -42,86 +54,82 @@ def find_j_value(filepath: str, atom1: int, atom2: int) -> Optional[float]:
         f"sed -n '{j_line_num}p' {filepath}",
         shell=True, capture_output=True, text=True
     )
-    
+
     if result.returncode == 0 and result.stdout.strip():
         return float(result.stdout.strip().split()[-1])
 
     return None
 
 
-def get_atom_pairs_intra(cursor, n_step: int) -> List[Tuple[int, int, int]]:
-    """Get (id, H_pert, H_resp) pairs from intra table."""
-    table_name = f"step_{n_step}_intra"
-    cursor.execute(f"SELECT id, H_pert, H_resp FROM {table_name} WHERE J_fermi IS NULL")
+def get_null_pairs(cursor, table_name: str, j_col: str) -> List[Tuple[int, int, int]]:
+    """Get (id, H_pert, H_resp) pairs where the given J column is NULL."""
+    cursor.execute(
+        f"SELECT id, H_pert, H_resp FROM {table_name} WHERE {j_col} IS NULL")
     return cursor.fetchall()
 
 
-def get_atom_pairs_inter(cursor, n_step: int) -> List[Tuple[int, int, int]]:
-    """Get (id, H_pert, H_resp) pairs from inter table."""
-    table_name = f"step_{n_step}_inter"
-    cursor.execute(f"SELECT id, H_pert, H_resp FROM {table_name} WHERE J_fermi IS NULL")
-    return cursor.fetchall()
+def update_j_value(cursor, table_name: str, j_col: str,
+                   row_id: int, j_value: float) -> None:
+    """Update a specific J column for a row."""
+    cursor.execute(
+        f"UPDATE {table_name} SET {j_col} = ? WHERE id = ?",
+        (j_value, row_id))
 
 
-def update_j_value(cursor, n_step: int, table_type: str, row_id: int, j_value: float) -> None:
-    """Update J_fermi value for a specific row."""
-    table_name = f"step_{n_step}_{table_type}"
-    cursor.execute(f"UPDATE {table_name} SET J_fermi = ? WHERE id = ?", (j_value, row_id))
-
-
-def process_output_file(cursor, n_step: int, filepath: str):
+def process_output_file(cursor, n_step: int, variant: str, filepath: str):
     """
-    Process output file for a given step.
-    Returns (n_intra_updated, n_inter_updated, n_errors).
+    Process output file for a given step and variant.
+    Fills the J_{variant} column in step_{n_step}_intra and step_{n_step}_inter.
     """
-    
-    # Process intra-molecular interactions
-    intra_pairs = get_atom_pairs_intra(cursor, n_step)
-    for row_id, h_pert, h_resp in intra_pairs:
-        j_value = find_j_value(filepath, h_pert, h_resp)
-        if j_value is not None:
-            update_j_value(cursor, n_step, "intra", row_id, j_value)
-    
-    # Process inter-molecular interactions
-    inter_pairs = get_atom_pairs_inter(cursor, n_step)
-    for row_id, h_pert, h_resp in inter_pairs:
-        j_value = find_j_value(filepath, h_pert, h_resp)
-        if j_value is not None:
-            update_j_value(cursor, n_step, "inter", row_id, j_value)
+    j_col = f"J_{variant}"
+
+    for suffix in ("intra", "inter"):
+        table_name = f"step_{n_step}_{suffix}"
+        if not table_exists(cursor, table_name):
+            continue
+        pairs = get_null_pairs(cursor, table_name, j_col)
+        for row_id, h_pert, h_resp in pairs:
+            j_value = find_j_value(filepath, h_pert, h_resp)
+            if j_value is not None:
+                update_j_value(cursor, table_name, j_col, row_id, j_value)
 
 # ============================== #
-#             Main 
+#             Main
 # ============================== #
 
 config = {
     "db_path": "nmr_jcoupling.db",
-    "output_dir": "amsoutput",
+    "variants": [
+        {"name": "TZ2P_FC",   "output_dir": "amsoutput/TZ2P_FC"},
+        {"name": "TZ2P_all",  "output_dir": "amsoutput/TZ2P_all"},
+        {"name": "TZ2PJ_FC",  "output_dir": "amsoutput/TZ2PJ_FC"},
+        {"name": "TZ2PJ_all", "output_dir": "amsoutput/TZ2PJ_all"},
+    ],
 }
 
 conn   = sqlite3.connect(config["db_path"])
 cursor = conn.cursor()
 
-# Get pending steps
 pending_steps = get_pending_steps(cursor)
 
 for n_step in pending_steps:
     filename = f"MDStep{n_step}_cluster.out"
-    filepath = os.path.join(config["output_dir"], filename)
-    
-    if not os.path.exists(filepath):
-        continue
-    
-    # Check if already filled
-    intra_filled = check_jvalues_filled(cursor, n_step, "intra")
-    inter_filled = check_jvalues_filled(cursor, n_step, "inter")
-    
-    if intra_filled and inter_filled:
+
+    for var in config["variants"]:
+        variant    = var["name"]
+        filepath   = os.path.join(var["output_dir"], filename)
+        j_col      = f"J_{variant}"
+
+        if not os.path.exists(filepath):
+            continue
+
+        # Check if already filled for this variant (both tables)
+        intra_ok = check_jcolumn_filled(cursor, f"step_{n_step}_intra", j_col)
+        inter_ok = check_jcolumn_filled(cursor, f"step_{n_step}_inter", j_col)
+        if intra_ok and inter_ok:
+            continue
+
+        process_output_file(cursor, n_step, variant, filepath)
         conn.commit()
-        continue
-    
-    process_output_file(cursor, n_step, filepath)
-    conn.commit()
 
 conn.close()
-
-

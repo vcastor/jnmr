@@ -8,4 +8,5 @@ plams_workdir*
 *.pdf
 *.png
 *.gjf
+*.claude/
 

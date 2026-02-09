@@ -1,31 +1,50 @@
 #!/bin/bash
+#
+# Generate SLURM .sl launchers for every .run file found
+# inside the TZ2P_FC, TZ2P_all, TZ2PJ_FC, TZ2PJ_all subdirectories.
+#
+# TZ2P_FC  → court partition (48 h)  — Fermi-contact only, fastest
+# others   → long  partition (99 h)  — contributions / larger basis
+#
 
-for run in *.run; do
-   [ -f "$run" ] || continue
+DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
 
-   base=${run%.run}
-   sl=${base}.sl
+for dir in "${DIRS[@]}"; do
+  [ -d "$dir" ] || continue
 
-   if [ -f "$sl" ]; then
-      continue
-   fi
+  # Choose partition & walltime per variant
+  if [ "$dir" = "TZ2P_FC" ]; then
+    PARTITION="court"
+    WALLTIME="47:00:00"
+  else
+    PARTITION="long"
+    WALLTIME="99:00:00"
+  fi
 
-   cat > "$sl" <<EOF
+  for run in "$dir"/*.run; do
+    [ -f "$run" ] || continue
+
+    base=${run%.run}
+    sl=${base}.sl
+    name=$(basename "$base")
+
+    [ -f "$sl" ] && continue
+
+    cat > "$sl" <<EOF
 #!/bin/bash
 
-# Slurm submission script
-# AMS 2023.204 parallel job
-# CRIANN v 1.00 - Dec 2023
+# Slurm submission script – ${dir}
+# AMS 2025.106 parallel job · CRIANN Austral (Genoa)
 
 #SBATCH --exclusive
-#SBATCH -J "${base%_cluster}"
-#SBATCH --output ${base%_cluster}.o%J
-#SBATCH --error  ${base%_cluster}.e%J
-#SBATCH --partition court
-#SBATCH --time 45:00:00
+#SBATCH -J ${name%_cluster}
+#SBATCH --output ${name%_cluster}.o%J
+#SBATCH --error  ${name%_cluster}.e%J
+#SBATCH --partition ${PARTITION}
+#SBATCH --time ${WALLTIME}
 
-#SBATCH --ntasks 10
-#SBATCH --mem 80000
+#SBATCH --ntasks 12
+#SBATCH --cpus-per-task 16
 
 module purge
 module load atomic_simu/cobra-ams/2025.106_amd
@@ -33,7 +52,7 @@ module list
 
 env | grep SCMLICENSE
 
-CASE=${base}
+CASE=${name}
 INP=\${CASE}.run
 OUT=\${CASE}.out
 
@@ -51,5 +70,5 @@ mkdir \$SLURM_SUBMIT_DIR/\$SLURM_JOB_ID
 mv * \$SLURM_SUBMIT_DIR/\$SLURM_JOB_ID
 EOF
 
+  done
 done
-

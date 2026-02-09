@@ -3,6 +3,7 @@ import sys
 import glob
 import sqlite3
 import numpy as np
+from itertools import groupby
 from typing import List, Tuple, Dict
 
 def get_step_from_filename(filename: str) -> int:
@@ -249,65 +250,75 @@ def intra_choline_interactions(
 
 def inter_nh2_ch3_interactions(
         mol_data: dict,
-        urea_offsets: List[int], 
+        urea_offsets: List[int],
         choline_offsets: List[int],
         distance_threshold: float = 5.0) -> List[Dict]:
     """
     Find NH2-CH3 inter-molecular interactions.
     The distance threshold is between the H atoms.
+
+    Each interaction dict represents one H_urea → H_choline pair with its
+    distance.  An extra 'contact_id' key groups rows that belong to the same
+    NH2-(CH3)3 contact.  Within each contact the closest H-H pair is flagged
+    with is_main = 1 (all others 0).  A cluster can have several contacts,
+    so the inter table can have several is_main = 1 rows.
     """
     ureas    = mol_data['urea']
     cholines = mol_data['choline']
-    
-    interactions = []
-    
+
+    # First pass: collect all H-H pairs grouped by (urea_idx, choline_idx)
+    # A "contact" is one NH2-(CH3)3 group
+    contacts: Dict[Tuple[int,int], List[Dict]] = {}
+
     for ui, urea in enumerate(ureas):
         nh2_h_list = get_nh2_hydrogens(urea)
-        
+
         for ci, choline in enumerate(cholines):
             choline_n_idx, choline_h_indices = get_ch3_hydrogens(choline)
             if choline_n_idx < 0:
                 continue
 
-            for urea_h_idx, urea_n_list in nh2_h_list:
+            for urea_h_idx, urea_n_idx in nh2_h_list:
                 urea_h_coord = np.array(urea.atoms[urea_h_idx].coords)
 
-                # Find hydrogens bellow the threshold distance
-                close_h = []
                 for ch3_h_idx in choline_h_indices:
                     ch3_h_coord = np.array(choline.atoms[ch3_h_idx].coords)
                     dist = np.linalg.norm(urea_h_coord - ch3_h_coord)
-                    if dist <= distance_threshold:
-                        global_ch3_h = choline_offsets[ci] + ch3_h_idx + 1
-                        close_h.append((global_ch3_h, dist))
 
-                if not close_h:
-                    continue
+                    if dist > distance_threshold:
+                        continue
 
-                close_h.sort(key=lambda x: x[1])
+                    global_h_urea = urea_offsets[ui] + urea_h_idx + 1
+                    global_ch3_h  = choline_offsets[ci] + ch3_h_idx + 1
 
-                # Global indices (1-based)
-                global_h_urea = urea_offsets[ui] + urea_h_idx + 1
-                global_n_urea = urea_offsets[ci] + choline_n_idx + 1
-                global_n_choline = choline_offsets[ci] + choline_n_idx + 1
+                    key = (ui, ci)
+                    contacts.setdefault(key, []).append({
+                        'urea_idx':    ui,
+                        'choline_idx': ci,
+                        'H_urea':      global_h_urea,
+                        'H_choline':   global_ch3_h,
+                        'distance':    dist,
+                    })
 
-                interactions.append({
-                    'urea_idx': ui,
-                    'choline_idx': ci,
-                    'H_urea': global_h_urea,
-                    'N_urea': global_n_urea,
-                    'N_choline': global_n_choline,
-                    'H_choline': [h for h, _ in close_h],
-                    'distances': [d for _, d in close_h]
-                })
-    
+    # Second pass: for each contact, mark the closest H-H pair as main
+    interactions = []
+    for contact_id, ((ui, ci), rows) in enumerate(contacts.items()):
+        # Find the minimum distance in this contact
+        min_dist = min(r['distance'] for r in rows)
+        for r in rows:
+            r['contact_id'] = contact_id
+            r['is_main'] = 1 if r['distance'] == min_dist else 0
+        interactions.extend(rows)
+
     return interactions
 
 
 def write_adf_input(
         sorted_mols: List['Molecule'], filename: str,
         intra_interactions: Dict[int, List[Tuple[int, List[int]]]],
-        inter_interactions: List[Dict]) -> None:
+        inter_interactions: List[Dict],
+        contributions = False,
+        j_basis = False) -> None:
     """
     Write ADF input file with NMR coupling calculations
     """
@@ -327,12 +338,12 @@ def write_adf_input(
         f.write("Task SinglePoint\n\n")
         f.write("Engine ADF\n")
         f.write(f"  title {basename}\n")
-        f.write("  beckegrid\n")
-        f.write("    quality good\n")
-        f.write("  End\n")
+        f.write("  NumericalQuality Excellent\n")
         f.write("  Basis\n")
-        f.write("    Type TZ2P\n")
-        # f.write("    Type TZ2P-J\n")
+        if j_basis:
+            f.write("    Type TZ2P-J\n")
+        else:
+            f.write("    Type TZ2P\n")
         f.write("    core None\n")
         f.write("  End\n")
         f.write("  save TAPE10\n")
@@ -343,7 +354,6 @@ def write_adf_input(
         f.write("  Relativity\n")
         f.write("    Level None\n")
         f.write("  End\n")
-        # f.write("  NumericalQuality VeryGood\n")
         f.write("EndEngine\n")
         f.write("eor\n\n")
         #
@@ -360,28 +370,36 @@ def write_adf_input(
                 f.write(f"  adffile {basename}.results/adf.rkf\n")
                 f.write(f"  tape10file {basename}.results/TAPE10\n")
                 f.write(f"  nmrcoupling\n")
-                # f.write(f"    dso\n")
-                # f.write(f"    pso\n")
+                if contributions:
+                    f.write(f"    dso\n")
+                    f.write(f"    pso\n")
+                    f.write(f"    sd\n")
                 f.write(f"    atompert {h1}\n")
                 f.write(f"    atomresp {h2_str}\n")
                 f.write(f"  end\n")
                 f.write(f"eor\n\n")
         # Inter-molecular NH2-CH3 interactions
         f.write("# Inter-molecular J coupling (NH2-CH3)\n")
+        sorted_inter = sorted(inter_interactions,
+                              key=lambda x: (x['urea_idx'], x['choline_idx'],
+                                             x['H_urea']))
         current_pair = None
-        for inter in inter_interactions:
-            ui, ci = inter['urea_idx'], inter['choline_idx']
+        for h_urea, group in groupby(sorted_inter,
+                                      key=lambda x: x['H_urea']):
+            rows = list(group)
+            ui, ci = rows[0]['urea_idx'], rows[0]['choline_idx']
             if (ui, ci) != current_pair:
                 current_pair = (ui, ci)
                 f.write(f"# Urea {ui + 1} - Choline {ci + 1}\n")
-            h_urea = inter['H_urea']
-            h_choline_str = " ".join(str(h) for h in inter['H_choline'])
+            h_choline_str = " ".join(str(r['H_choline']) for r in rows)
             f.write(f"$AMSBIN/cpl << eor\n")
             f.write(f"  adffile {basename}.results/adf.rkf\n")
             f.write(f"  tape10file {basename}.results/TAPE10\n")
             f.write(f"  nmrcoupling\n")
-            # f.write(f"    dso\n")
-            # f.write(f"    pso\n")
+            if contributions:
+                f.write(f"    dso\n")
+                f.write(f"    pso\n")
+                f.write(f"    sd\n")
             f.write(f"    atompert {h_urea}\n")
             f.write(f"    atomresp {h_choline_str}\n")
             f.write(f"  end\n")
@@ -393,94 +411,97 @@ def add_snapshot_to_db(
         n_choline: int,
         intra_interactions: Dict[int, List[Tuple[int, List[int]]]],
         inter_interactions: List[Dict]) -> None:
+    """
+    Populate unified tables (one pair per step, not per variant):
+      step_{n_step}_intra   – with 4 J columns (one per variant)
+      step_{n_step}_inter   – with 4 J columns + geometry columns
+    """
 
-    conn = sqlite3.connect(db_path)
+    conn   = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    # Count interactions
-    n_inter = sum(len(inter['H_choline']) for inter in inter_interactions)
-    
-    # Insert into main table
+
+    # Count inter interactions
+    n_inter = len(inter_interactions)
+
+    # Insert into main snapshots table
     cursor.execute('''
-        INSERT OR REPLACE INTO snapshots (n_step, n_choline, n_inter)
+        INSERT OR IGNORE INTO snapshots (n_step, n_choline, n_inter)
         VALUES (?, ?, ?)
     ''', (n_step, n_choline, n_inter))
-    
-    # Create and populate intra table
+
+    # ── intra table ─────────────────────────────────────────────────────
     intra_table = f"step_{n_step}_intra"
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS {intra_table} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            H_pert INTEGER,
-            H_resp INTEGER,
-            J_fermi REAL
+            H_pert      INTEGER,
+            H_resp      INTEGER,
+            J_TZ2P_FC   REAL,
+            J_TZ2P_all  REAL,
+            J_TZ2PJ_FC  REAL,
+            J_TZ2PJ_all REAL
         )
     ''')
-    
-    # Clear existing data for this step
     cursor.execute(f"DELETE FROM {intra_table}")
-    
+
     for ci in sorted(intra_interactions.keys()):
         for h1, h2_list in intra_interactions[ci]:
             for h2 in h2_list:
                 cursor.execute(f'''
-                    INSERT INTO {intra_table} (H_pert, H_resp, J_fermi)
-                    VALUES (?, ?, NULL)
+                    INSERT INTO {intra_table} (H_pert, H_resp)
+                    VALUES (?, ?)
                 ''', (h1, h2))
-    
-    # Create and populate inter table
+
+    # ── inter table ─────────────────────────────────────────────────────
     inter_table = f"step_{n_step}_inter"
     cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS {inter_table} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            H_pert INTEGER,
-            H_resp INTEGER,
-            distance REAL,
-            J_fermi REAL
+            H_pert      INTEGER,
+            H_resp      INTEGER,
+            distance    REAL,
+            is_main     INTEGER DEFAULT 0,
+            J_TZ2P_FC   REAL,
+            J_TZ2P_all  REAL,
+            J_TZ2PJ_FC  REAL,
+            J_TZ2PJ_all REAL
         )
     ''')
-    
-    # Clear existing data for this step
     cursor.execute(f"DELETE FROM {inter_table}")
-    
+
+    # is_main is already computed per contact by inter_nh2_ch3_interactions
     for inter in inter_interactions:
-        ui = inter['urea_idx'] + 1
-        ci = inter['choline_idx'] + 1
-        h_urea = inter['H_urea']
-        
-        for h_ch, dist in zip(inter['H_choline'], inter['distances']):
-            cursor.execute(f'''
-                INSERT INTO {inter_table} (H_pert, H_resp, distance, J_fermi)
-                VALUES (?, ?, ?, NULL)
-            ''', (h_urea, h_ch, dist))
-    
+        cursor.execute(f'''
+            INSERT INTO {inter_table}
+                (H_pert, H_resp, distance, is_main)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (inter['H_urea'], inter['H_choline'],
+              inter['distance'], inter['is_main']))
+
     conn.commit()
     conn.close()
 
 def add_snapshot_to_db_error(db_path: str, n_step: int) -> None:
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
+
     cursor.execute('''
-        INSERT OR REPLACE INTO snapshots (n_step, n_choline, n_inter, comment)
+        INSERT INTO snapshots (n_step, n_choline, n_inter, comment)
         VALUES (?, 0, 0, 'Error processing snapshot')
+        ON CONFLICT(n_step) DO UPDATE SET comment = 'Error processing snapshot'
     ''', (n_step,))
-    
+
     conn.commit()
     conn.close()
 
-def process_snapshot(
-        input_xyz: str,
-        output_run: str,
-        db_path: str,
-        distance_threshold: float = 5.0) -> bool:
-
-    n_step  = get_step_from_filename(input_xyz)
-    n_atoms = sum(1 for line in open(input_xyz)) - 2 # Safe check for empty file
-
+def analyse_snapshot(input_xyz: str, distance_threshold: float = 5.0):
+    """
+    Parse the XYZ file, classify molecules, compute interactions.
+    Returns (sorted_mols, counts, intra, inter) or None on error.
+    """
+    n_atoms = sum(1 for line in open(input_xyz)) - 2
     if n_atoms < 1:
-        add_snapshot_to_db_error(db_path, n_step)
-        return True
+        return None
 
     cluster = Molecule(input_xyz)
     centre  = np.mean(cluster.as_array(), axis=0)
@@ -491,15 +512,12 @@ def process_snapshot(
     sorted_mols, counts, mol_data = classify_sort_canonical(molecules, centre)
     urea_offsets, choline_offsets, chloride_offsets = compute_offsets(mol_data)
 
-    # zero-based indices
     intra = intra_choline_interactions(mol_data, choline_offsets)
     inter = inter_nh2_ch3_interactions(mol_data, urea_offsets,
                                        choline_offsets, distance_threshold)
 
-    write_adf_input(sorted_mols, output_run, intra, inter)
-    add_snapshot_to_db(db_path, n_step, counts['choline'], intra, inter)
-    
-    return True
+    return sorted_mols, counts, intra, inter
+
 
 # =========================================================================== #
 #                                  Main                                       #
@@ -509,7 +527,15 @@ init()
 
 config = {
     "clusters_xyz": "clusters",
-    "output_dir": "run_scripts",
+    "run_dirs":    ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"],
+    "output_dirs": ["amsoutput/TZ2P_FC",  "amsoutput/TZ2P_all",
+                    "amsoutput/TZ2PJ_FC", "amsoutput/TZ2PJ_all"],
+    "opts": [
+        {"contributions": False, "basisJ": False},
+        {"contributions": True,  "basisJ": False},
+        {"contributions": False, "basisJ": True},
+        {"contributions": True,  "basisJ": True},
+    ],
     "db_path": "nmr_jcoupling.db",
     "distance_threshold": 5.0,
 }
@@ -517,10 +543,35 @@ config = {
 xyz_files = sorted(glob.glob(os.path.join(config["clusters_xyz"], "*.xyz")))
 
 for xyz_file in xyz_files:
-    basename   = os.path.splitext(os.path.basename(xyz_file))[0]
-    output_run = os.path.join(config["output_dir"], f"{basename}.run")
-    if not os.path.exists(output_run):
-        process_snapshot(xyz_file, output_run, config["db_path"], config["distance_threshold"])
+    basename = os.path.splitext(os.path.basename(xyz_file))[0]
+    n_step   = get_step_from_filename(xyz_file)
+
+    # ── Geometry analysis (once per snapshot) ────────────────────────────
+    analysis = analyse_snapshot(xyz_file, config["distance_threshold"])
+
+    if analysis is None:
+        add_snapshot_to_db_error(config["db_path"], n_step)
+        continue
+
+    sorted_mols, counts, intra, inter = analysis
+
+    # ── Populate DB tables (once – geometry only, J columns start NULL) ──
+    add_snapshot_to_db(config["db_path"], n_step, counts['choline'],
+                       intra, inter)
+
+    # ── Generate .run files (one per variant) ────────────────────────────
+    for run_dir, out_dir, opts in zip(
+            config["run_dirs"], config["output_dirs"], config["opts"]):
+
+        out_file   = os.path.join(out_dir, f"{basename}.out")
+        run_script = os.path.join("run_scripts", run_dir, f"{basename}.run")
+
+        # if os.path.exists(out_file) or os.path.exists(run_script):
+        #     continue
+
+        write_adf_input(sorted_mols, run_script, intra, inter,
+                        contributions=opts["contributions"],
+                        basisJ=opts["basisJ"])
 
 finish()
 
