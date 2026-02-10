@@ -11,7 +11,7 @@
 # Run this ON CRIANN after downloading outputs.
 #
 
-BASE=/home/2026014/vcasto03/snapshots
+BASE=/home/2026014/vcasto03/nmr_main
 DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
 
 cleaned=0
@@ -50,4 +50,3 @@ for dir in "${DIRS[@]}"; do
 
 done
 
-echo "Cleaned $cleaned finished jobs"

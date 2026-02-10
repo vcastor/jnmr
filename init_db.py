@@ -54,3 +54,4 @@ def add_comment_columns(db_path: str) -> None:
 db_path = "nmr_jcoupling.db"
 # init_database(db_path)      # uncomment to create from scratch
 add_comment_columns(db_path)   # safe to re-run (skips existing columns)
+

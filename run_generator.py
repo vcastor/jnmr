@@ -565,8 +565,8 @@ for xyz_file in xyz_files:
         out_file   = os.path.join(out_dir, f"{basename}.out")
         run_script = os.path.join("run_scripts", run_dir, f"{basename}.run")
 
-        # if os.path.exists(out_file) or os.path.exists(run_script):
-        #     continue
+        if os.path.exists(out_file) or os.path.exists(run_script):
+            continue
 
         write_adf_input(sorted_mols, run_script, intra, inter,
                         opts["contributions"],

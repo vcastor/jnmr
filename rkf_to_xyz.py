@@ -45,12 +45,6 @@ config = {
     "output_dir": "mdStepsxyz",
 }
 
-for arg in sys.argv:
-    if '=' in arg:
-        key, value = arg.split('=', 1)
-        if key in config:
-            config[key] = value
-
 rkf_files = sorted(glob.glob(os.path.join(config["input_dir"], "*.rkf")))
 
 for rkf in rkf_files:

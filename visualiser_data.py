@@ -3,7 +3,6 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 def get_processed_steps(cursor):
     cursor.execute("SELECT n_step FROM snapshots WHERE comment IS NULL")
     return [row[0] for row in cursor.fetchall()]
