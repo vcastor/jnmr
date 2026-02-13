@@ -2,6 +2,7 @@ plams_workdir*
 *.rkf
 *.xyz
 *.run
+*.sl
 *.txt
 *.out
 *.swp
