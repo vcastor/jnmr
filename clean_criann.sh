@@ -11,42 +11,36 @@
 # Run this ON CRIANN after downloading outputs.
 #
 
+set -euo pipefail
+
 BASE=/home/2026014/vcasto03/nmr_main
 DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
 
-cleaned=0
+AGE_DAYS=2
 
 for dir in "${DIRS[@]}"; do
   target="$BASE/$dir"
   [ -d "$target" ] || continue
 
   # --- Remove finished .run/.sl whose output exists in a job dir ---
+  shopt -s nullglob
   for run in "$target"/*.run; do
-    [ -f "$run" ] || continue
     name=$(basename "$run" .run)
 
-    # Check if any numeric job directory contains the .out
     found=false
     for jobdir in "$target"/[0-9]*/; do
       [ -d "$jobdir" ] || continue
-      if [ -f "$jobdir/${name}.out" ]; then
-        found=true
-        break
-      fi
+      [ -f "$jobdir/${name}.out" ] && found=true && break
     done
 
     if $found; then
-      rm -f "$run"
-      rm -f "$target/${name}.sl"
-      cleaned=$((cleaned + 1))
+      rm -f "$run" "$target/${name}.sl"
     fi
   done
+  shopt -u nullglob
 
-  # --- Remove all numeric job directories ---
-  for jobdir in "$target"/[0-9]*/; do
-    [ -d "$jobdir" ] || continue
-    rm -rf "$jobdir"
-  done
-
+  # --- Remove numeric job directories older than AGE_DAYS ---
+  find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+    -regex '.*/[0-9]+' -mtime +"$AGE_DAYS" -exec rm -rf {} +
 done
 

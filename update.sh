@@ -19,14 +19,13 @@ rm -rf plams_workdir* # clean plams workdir
   ./to_criann.sh
 )
 
-# Download outputs from CRIANN
+# Run download and clean CRIANN
+ssh criann 'bash -s' < run_criann.sh
 (
   cd amsoutput
   ./download_outputs.sh
 )
-
-# Clean finished jobs on CRIANN (job dirs + run/sl)
-ssh criann 'bash -s' < cleaner.sh
+ssh criann 'bash -s' < clean_criann.sh
 
 # Update the database with J values
 ./output_reader.py
