@@ -23,7 +23,7 @@ rm -rf plams_workdir* # clean plams workdir
 ssh criann 'bash -s' < run_criann.sh
 (
   cd amsoutput
-  ./download_outputs.sh
+  ./download_outputs.sh 2> /dev/null
 )
 ssh criann 'bash -s' < clean_criann.sh
 
