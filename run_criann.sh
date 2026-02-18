@@ -12,7 +12,13 @@ PATTERN='MDStep*_cluster.sl'
 CHECKPOINT_NAME='.checkpoint'
 
 step_of() {
-  basename "$1" | sed -E 's/[^0-9]*([0-9]+).*/\1/'
+  local b
+  b=$(basename "$1")
+  if [[ $b =~ ([0-9]+) ]]; then
+    printf '%d\n' "${BASH_REMATCH[1]}"
+  else
+    printf '0\n'
+  fi
 }
 
 for dir in "${DIRS[@]}"; do
@@ -25,7 +31,7 @@ for dir in "${DIRS[@]}"; do
     echo 20000 >"$CHECKPOINT_NAME"
   fi
 
-  LAST=$(cat "$CHECKPOINT_NAME")
+  LAST=$(<"$CHECKPOINT_NAME")
 
   shopt -s nullglob
   files=( $PATTERN )

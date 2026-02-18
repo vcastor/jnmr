@@ -3,8 +3,8 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
-def get_processed_steps(cursor):
-    cursor.execute("SELECT n_step FROM snapshots WHERE comment IS NULL")
+def get_processed_steps(cursor, basis_cont):
+    cursor.execute(f"SELECT n_step FROM snapshots WHERE comment_{basis_cont} IS NULL")
     return [row[0] for row in cursor.fetchall()]
 
 
@@ -85,7 +85,8 @@ def plot_j_vs_distance(j_values, distances, output):
 conn = sqlite3.connect("nmr_jcoupling.db")
 cursor = conn.cursor()
 
-steps = get_processed_steps(cursor)
+basis_cont = "TZ2P_FC"
+steps = get_processed_steps(cursor, basis_cont)
 
 j_intra = collect_j_values(cursor, steps, "intra")
 print_stats(j_intra, "Intra-molecular (CH2-CH2)")

@@ -10,13 +10,13 @@
 $AMSBIN/plams rkf_to_xyz.py 2> /dev/null
 $AMSBIN/plams region_selector.py 2> /dev/null
 $AMSBIN/plams run_generator.py 2> /dev/null
-rm -rf plams_workdir* # clean plams workdir
+rm -rf plams_workdir*
 
 # Generate SLURM launchers and upload to CRIANN
 (
   cd run_scripts
   ./launcher_creator.sh
-  ./to_criann.sh
+  ./to_criann.sh 2> /dev/null
 )
 
 # Run download and clean CRIANN
@@ -28,6 +28,7 @@ ssh criann 'bash -s' < run_criann.sh
 ssh criann 'bash -s' < clean_criann.sh
 
 # Update the database with J values
+echo "Updating database with J values..."
 ./output_reader.py
 ./output_warning.py
 
