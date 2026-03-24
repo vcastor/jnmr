@@ -13,19 +13,20 @@ $AMSBIN/plams run_generator.py 2> /dev/null
 rm -rf plams_workdir*
 
 # Generate SLURM launchers and upload to CRIANN
+./new_launchers.py
 (
   cd run_scripts
-  ./launcher_creator.sh
+  # ./launcher_creator.sh
   ./to_criann.sh 2> /dev/null
 )
 
-# Run download and clean CRIANN
-ssh criann 'bash -s' < run_criann.sh
+# CRIANN
 (
   cd amsoutput
   ./download_outputs.sh 2> /dev/null
 )
 ssh criann 'bash -s' < clean_criann.sh
+ssh criann 'bash -s' < run_criann.sh
 
 # Update the database with J values
 echo "Updating database with J values..."
