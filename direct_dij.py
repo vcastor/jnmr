@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 DB_PATH = Path("nmr_jcoupling.db")
-XYZ_DIR = Path("mdStepsxyz")
+XYZ_DIR = Path("clusters")
 
 DB_INDICES_ARE_1_BASED = True
 
@@ -184,7 +184,7 @@ for nstep in steps:
    if not table_exists(con, table_name):
       continue
 
-   xyz_path = XYZ_DIR/f"MDStep{nstep}.xyz"
+   xyz_path = XYZ_DIR/f"MDStep{nstep}_cluster.xyz"
    assert xyz_path.exists(), f"Missing xyz file: {xyz_path}"
    symbols, coords = read_xyz(xyz_path)
    pairs = fetch_pairs_for_step(con, nstep, mode=MODE)
@@ -207,6 +207,7 @@ for nstep in steps:
          coords[i], coords[j], iso_i, iso_j, field_directions
       )
 
+      # absD_mean = np.mean(D_vals)
       absD_mean = np.mean(np.abs(D_vals))
       all_absD.append(absD_mean)
       all_info.append({

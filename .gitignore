@@ -10,4 +10,5 @@ plams_workdir*
 *.png
 *.gjf
 *.claude/
+*.DS_Store
 
