@@ -7,6 +7,7 @@ REMOTE=criann:/home/2026014/vcasto03/nmr_main
 DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
 
 for dir in "${DIRS[@]}"; do
+  echo ""
   [ -d "$dir" ] || mkdir -p "$dir"
   echo "Downloading .out files for $dir..."
 

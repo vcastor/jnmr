@@ -40,7 +40,9 @@ for dir in "${DIRS[@]}"; do
   shopt -u nullglob
 
   # --- Remove numeric job directories older than AGE_DAYS ---
+  # find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+  #   -regex '.*/[0-9]+' -mtime +"$AGE_DAYS" -exec rm -rf {} +
   find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-    -regex '.*/[0-9]+' -mtime +"$AGE_DAYS" -exec rm -rf {} +
+    -regex '.*/[0-9]+' -exec rm -rf {} +
 done
 
