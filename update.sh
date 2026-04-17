@@ -16,7 +16,6 @@ rm -rf plams_workdir*
 ./new_launchers.py
 (
   cd run_scripts
-  # ./launcher_creator.sh
   ./to_criann.sh 2> /dev/null
 )
 

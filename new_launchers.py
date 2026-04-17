@@ -38,13 +38,14 @@ CONFIG = {
         },
         "TZ2PJ_all": {
             "partition": "tlong",
-            "walltime": "199:00:00",
+            "walltime": "299:00:00",
             "ntasks": 12,
             "cpus_per_task": 16,
         },
     },
     "module_load": "atomic_simu/cobra-ams/2025.106_amd",
     "job_name_suffix_to_strip": "_cluster",
+    "job_name_prefix_to_strip": "MDStep",
 }
 
 STEP_RE = re.compile(r"MDStep(\d+)")
@@ -69,11 +70,15 @@ def get_warning_steps(conn: sqlite3.Connection, variant: str,
     rows = conn.execute(query, tuple(warning_messages)).fetchall()
     return {row[0] for row in rows}
 
-def slurm_text(case_name: str, variant: str, variant_cfg: dict,
-               module_load: str, suffix_to_strip: str) -> str:
+def slurm_text(
+        case_name: str, variant: str, variant_cfg: dict,
+        module_load: str, suffix_to_strip: str, prefix_to_strip: str
+        ) -> str:
     job_base = case_name
     if suffix_to_strip and job_base.endswith(suffix_to_strip):
         job_base = job_base[:-len(suffix_to_strip)]
+    if prefix_to_strip and job_base.startswith(prefix_to_strip):
+        job_base = job_base[len(prefix_to_strip):]
 
     ntasks = variant_cfg["ntasks"]
     cpus_per_task = variant_cfg["cpus_per_task"]
@@ -168,6 +173,7 @@ try:
                 variant_cfg=variant_cfg,
                 module_load=CONFIG["module_load"],
                 suffix_to_strip=CONFIG["job_name_suffix_to_strip"],
+                prefix_to_strip=CONFIG["job_name_prefix_to_strip"],
             )
             slurm_file.write_text(content)
             created.append(str(slurm_file))
