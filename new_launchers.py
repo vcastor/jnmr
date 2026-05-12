@@ -19,8 +19,8 @@ CONFIG = {
         #   long  <= 100h
         #   tlong <= 300h
         "TZ2P_FC": {
-            "partition": "long",
-            "walltime": "99:00:00",
+            "partition": "tlong",
+            "walltime": "199:00:00",
             "ntasks": 12,
             "cpus_per_task": 16,
         },

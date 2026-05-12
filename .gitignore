@@ -11,4 +11,5 @@ plams_workdir*
 *.gjf
 *.claude/
 *.DS_Store
-
+__*__/
+*.pyc
