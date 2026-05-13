@@ -1,8 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 download_outs() {
   local remote_base="$1"
   shift
+  local host="${remote_base%%:*}"
+  local path="${remote_base#*:}"
 
   local dir
   for dir in "$@"; do
@@ -10,13 +12,9 @@ download_outs() {
     [ -d "$dir" ] || mkdir -p "$dir"
     echo "Downloading .out files for $dir..."
 
-    rsync -avm \
-      --ignore-existing \
-      --include='*.out' \
-      --exclude='*/' \
-      --exclude='*' \
-      "$remote_base/$dir/*/" \
-      "$dir/"
+    ssh "$host" "cd '$path/$dir' && find . -mindepth 2 -maxdepth 2 -name '*.out'" | \
+      rsync -av --ignore-existing --no-relative --files-from=- \
+        "$remote_base/$dir/" "$dir/"
   done
 }
 

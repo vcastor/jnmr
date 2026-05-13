@@ -13,36 +13,41 @@
 
 set -euo pipefail
 
-BASE=/home/2026014/vcasto03/nmr_main
-DIRS=(TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all)
+clean_dirs() {
+  local base="$1"
+  shift
 
-AGE_DAYS=1
+  local dir target
+  for dir in "$@"; do
+    target="$base/$dir"
+    [ -d "$target" ] || continue
 
-for dir in "${DIRS[@]}"; do
-  target="$BASE/$dir"
-  [ -d "$target" ] || continue
+    # --- Remove finished .run/.sl whose output exists in a job dir ---
+    shopt -s nullglob
+    for run in "$target"/*.run; do
+      name=$(basename "$run" .run)
 
-  # --- Remove finished .run/.sl whose output exists in a job dir ---
-  shopt -s nullglob
-  for run in "$target"/*.run; do
-    name=$(basename "$run" .run)
+      found=false
+      for jobdir in "$target"/[0-9]*/; do
+        [ -d "$jobdir" ] || continue
+        [ -f "$jobdir/${name}.out" ] && found=true && break
+      done
 
-    found=false
-    for jobdir in "$target"/[0-9]*/; do
-      [ -d "$jobdir" ] || continue
-      [ -f "$jobdir/${name}.out" ] && found=true && break
+      if $found; then
+        rm -f "$run" "$target/${name}.sl"
+      fi
     done
+    shopt -u nullglob
 
-    if $found; then
-      rm -f "$run" "$target/${name}.sl"
-    fi
+    # --- Remove numeric job directories ---
+    find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+      -regex '.*/[0-9]+' -exec rm -rf {} +
   done
-  shopt -u nullglob
+}
 
-  # --- Remove numeric job directories older than AGE_DAYS ---
-  # find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-  #   -regex '.*/[0-9]+' -mtime +"$AGE_DAYS" -exec rm -rf {} +
-  find "$target" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
-    -regex '.*/[0-9]+' -exec rm -rf {} +
-done
+clean_dirs /home/2026014/vcasto03/nmr_main \
+  TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all
+
+clean_dirs /home/2026014/vcasto03 \
+  qtaim
 
