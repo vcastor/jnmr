@@ -3,8 +3,10 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
-DB_PATH  = "nmr_jcoupling.db"
-VARIANTS = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
+PLOT_DIR    = "plots"
+DB_PATH     = "nmr_jcoupling.db"
+VARIANTS    = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
+PLOT_STYLES = [("black", False, ""), ("white", True, "_transparent")]
 
 def column_exists(cursor, table, col):
     cursor.execute(f"PRAGMA table_info({table})")
@@ -17,17 +19,17 @@ def karplus(theta_rad, alpha, beta, gamma):
 def style_axes(ax):
     ax.set_facecolor("none")
     for spine in ax.spines.values():
-        spine.set_color("white")
-    ax.tick_params(colors="white", which="both")
-    ax.xaxis.label.set_color("white")
-    ax.yaxis.label.set_color("white")
-    ax.title.set_color("white")
+        spine.set_color(LETTER_COLOUR)
+    ax.tick_params(colors=LETTER_COLOUR, which="both")
+    ax.xaxis.label.set_color(LETTER_COLOUR)
+    ax.yaxis.label.set_color(LETTER_COLOUR)
+    ax.title.set_color(LETTER_COLOUR)
     leg = ax.get_legend()
     if leg is not None:
         leg.get_frame().set_facecolor("none")
-        leg.get_frame().set_edgecolor("white")
+        leg.get_frame().set_edgecolor(LETTER_COLOUR)
         for t in leg.get_texts():
-            t.set_color("white")
+            t.set_color(LETTER_COLOUR)
 
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -99,24 +101,25 @@ for variant in VARIANTS:
     print(f"  gamma = {g2:+.4f} ± {dg2:.4f} Hz")
     print(f"  RMSE  = {rmse2:.4f} Hz")
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(thetas[mask],  js[mask],
-               alpha=0.25, s=8,  color="steelblue", label="data")
-    ax.scatter(thetas[~mask], js[~mask],
-               alpha=0.9,  s=45, color="red", marker="x", linewidths=1.8,
-               label="outliers (excluded)")
-    tc = np.linspace(0, np.pi, 400)
-    ax.plot(tc, karplus(tc, a2, b2, g2), color="crimson", linewidth=2,
-            label=fr"${a2:+.2f}{b2:+.2f}\cos\theta{g2:+.2f}\cos^2\theta$")
-    ax.set_xlabel(r"|H-C-C-H| dihedral $\theta$ (rad)")
-    ax.set_ylabel(f"J ({variant}) (Hz)")
-    ax.set_title(f"Karplus fit · {variant}  (RMSE {rmse2:.2f} Hz, 5 outliers excluded)")
-    ax.set_xlim(0, np.pi)
-    ax.legend()
-    style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(f"karplus_{variant}.pdf", transparent=True)
-    plt.close(fig)
+    for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.scatter(thetas[mask],  js[mask],
+                   alpha=0.25, s=8,  color="steelblue", label="data")
+        ax.scatter(thetas[~mask], js[~mask],
+                   alpha=0.9,  s=45, color="red", marker="x", linewidths=1.8,
+                   label="outliers (excluded)")
+        tc = np.linspace(0, np.pi, 400)
+        ax.plot(tc, karplus(tc, a2, b2, g2), color="crimson", linewidth=2,
+                label=fr"${a2:+.2f}{b2:+.2f}\cos\theta{g2:+.2f}\cos^2\theta$")
+        ax.set_xlabel(r"|H-C-C-H| dihedral $\theta$ (rad)")
+        ax.set_ylabel(f"J ({variant}) (Hz)")
+        ax.set_title(f"Karplus fit · {variant}  (RMSE {rmse2:.2f} Hz, 5 outliers excluded)")
+        ax.set_xlim(0, np.pi)
+        ax.legend()
+        style_axes(ax)
+        fig.tight_layout()
+        fig.savefig(f"{PLOT_DIR}/karplus_{variant}{SUFFIX}.pdf", transparent=TRANSPARENT)
+        plt.close(fig)
 
 conn.close()
 

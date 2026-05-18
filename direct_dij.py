@@ -4,8 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-DB_PATH = Path("nmr_jcoupling.db")
-XYZ_DIR = Path("clusters")
+DB_PATH  = Path("nmr_jcoupling.db")
+XYZ_DIR  = Path("clusters")
+PLOT_DIR = "plots"
 
 DB_INDICES_ARE_1_BASED = True
 
@@ -228,18 +229,32 @@ assert len(all_absD) > 0, "No data collected"
 
 all_absD = np.array(all_absD, dtype=float)
 
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.hist(all_absD, bins="auto", edgecolor="black")
-ax.set_xlabel(r"$\langle |D_{ij}^{\mathrm{direct}}| \rangle_{B}$ (Hz)")
-ax.set_ylabel("Count")
-ax.set_title("Direct dipolar coupling (absolute) averaged over field directions")
-ax.axvline(np.mean(all_absD), color="red", linestyle="--",
-           label=f"mean = {np.mean(all_absD):.4f} Hz")
-ax.axvline(np.median(all_absD), color="blue", linestyle=":",
-           label=f"median = {np.median(all_absD):.4f} Hz")
-ax.legend()
-plt.tight_layout()
-plt.savefig("direct_dij_histogram.pdf")
+for LETTER_COLOUR, TRANSPARENT, SUFFIX in [("black", False, ""), ("white", True, "_transparent")]:
+   fig, ax = plt.subplots(figsize=(8, 5))
+   ax.hist(all_absD, bins="auto", edgecolor=LETTER_COLOUR)
+   ax.set_xlabel(r"$\langle |D_{ij}^{\mathrm{direct}}| \rangle_{B}$ (Hz)")
+   ax.set_ylabel("Count")
+   ax.set_title("Direct dipolar coupling (absolute) averaged over field directions")
+   ax.axvline(np.mean(all_absD), color="red", linestyle="--",
+              label=f"mean = {np.mean(all_absD):.4f} Hz")
+   ax.axvline(np.median(all_absD), color="blue", linestyle=":",
+              label=f"median = {np.median(all_absD):.4f} Hz")
+   ax.legend()
+   ax.set_facecolor("none")
+   for spine in ax.spines.values():
+      spine.set_color(LETTER_COLOUR)
+   ax.tick_params(colors=LETTER_COLOUR, which="both")
+   ax.xaxis.label.set_color(LETTER_COLOUR)
+   ax.yaxis.label.set_color(LETTER_COLOUR)
+   ax.title.set_color(LETTER_COLOUR)
+   leg = ax.get_legend()
+   leg.get_frame().set_facecolor("none")
+   leg.get_frame().set_edgecolor(LETTER_COLOUR)
+   for t in leg.get_texts():
+      t.set_color(LETTER_COLOUR)
+   plt.tight_layout()
+   plt.savefig(f"{PLOT_DIR}/direct_dij_histogram{SUFFIX}.pdf", transparent=TRANSPARENT)
+   plt.close(fig)
 
 print(f"Field directions used:  {len(field_directions)}")
 print(f"Total entries:          {len(all_absD)}")

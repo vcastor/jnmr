@@ -6,9 +6,26 @@ from scipy.stats import linregress, pearsonr, spearmanr
 from scipy.optimize import curve_fit
 from pathlib import Path
 
-DB_PATH = Path("nmr_jcoupling.db")
-VARIANT = "TZ2P_FC"
-J_COL   = f"J_{VARIANT}"
+PLOT_DIR    = "plots"
+DB_PATH     = Path("nmr_jcoupling.db")
+VARIANT     = "TZ2P_FC"
+J_COL       = f"J_{VARIANT}"
+PLOT_STYLES = [("black", False, ""), ("white", True, "_transparent")]
+
+def style_axes(ax, color):
+    ax.set_facecolor("none")
+    for spine in ax.spines.values():
+        spine.set_color(color)
+    ax.tick_params(colors=color, which="both")
+    ax.xaxis.label.set_color(color)
+    ax.yaxis.label.set_color(color)
+    ax.title.set_color(color)
+    leg = ax.get_legend()
+    if leg is not None:
+        leg.get_frame().set_facecolor("none")
+        leg.get_frame().set_edgecolor(color)
+        for t in leg.get_texts():
+            t.set_color(color)
 
 def good_steps(conn):
     cur = conn.execute("SELECT n_step FROM snapshots WHERE comment IS NULL")
@@ -134,41 +151,45 @@ print(f"              r2 = {r2(j_p, yhat_sp):.4f}")
 # ---------------- plots ----------------
 xgrid = np.linspace(di_p.min(), di_p.max(), 400)
 
-fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
+for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
 
-ax = axes[0]
-ax.scatter(di_intra, np.abs(j_intra), s=14, alpha=0.4, color="tab:orange",
-           label=f"intra (n={len(di_intra)})")
-ax.scatter(di_inter, np.abs(j_inter), s=14, alpha=0.4, color="tab:blue",
-           label=f"inter (n={len(di_inter)})")
-ax.plot(xgrid, lin.slope*xgrid+lin.intercept, "k-",  lw=1.3,
-        label=f"linear  r²={r2(j_p, yhat_lin):.3f}")
-ax.plot(xgrid, a_pw*xgrid**b_pw, "r--", lw=1.3,
-        label=f"power  b={b_pw:+.2f}  r²={r2(j_p, yhat_pw):.3f}")
-ax.plot(xgrid, a_ex*np.exp(b_ex*xgrid), "g-.", lw=1.3,
-        label=f"exp  b={b_ex:+.2f}  r²={r2(j_p, yhat_ex):.3f}")
-ax.plot(xgrid, np.polyval(quad_coef, xgrid), "m:", lw=1.6,
-        label=f"quad  r²={r2(j_p, yhat_q):.3f}")
-ax.set_xlabel("DI (delocalization index)")
-ax.set_ylabel(fr"$|J_{{\mathrm{{{VARIANT}}}}}|$  [Hz]")
-ax.axhline(0, color="grey", lw=0.5)
-ax.axvline(0, color="grey", lw=0.5)
-ax.legend(loc="best", fontsize=8)
-ax.set_title("linear scale")
+    ax = axes[0]
+    ax.scatter(di_intra, np.abs(j_intra), s=14, alpha=0.4, color="tab:orange",
+               label=f"intra (n={len(di_intra)})")
+    ax.scatter(di_inter, np.abs(j_inter), s=14, alpha=0.4, color="tab:blue",
+               label=f"inter (n={len(di_inter)})")
+    ax.plot(xgrid, lin.slope*xgrid + lin.intercept, color=LETTER_COLOUR, lw=1.3,
+            label=f"linear  r²={r2(j_p, yhat_lin):.3f}")
+    ax.plot(xgrid, a_pw*xgrid**b_pw, "r--", lw=1.3,
+            label=f"power  b={b_pw:+.2f}  r²={r2(j_p, yhat_pw):.3f}")
+    ax.plot(xgrid, a_ex*np.exp(b_ex*xgrid), "g-.", lw=1.3,
+            label=f"exp  b={b_ex:+.2f}  r²={r2(j_p, yhat_ex):.3f}")
+    ax.plot(xgrid, np.polyval(quad_coef, xgrid), "m:", lw=1.6,
+            label=f"quad  r²={r2(j_p, yhat_q):.3f}")
+    ax.set_xlabel("DI (delocalization index)")
+    ax.set_ylabel(fr"$|J_{{\mathrm{{{VARIANT}}}}}|$  [Hz]")
+    ax.axhline(0, color="grey", lw=0.5)
+    ax.axvline(0, color="grey", lw=0.5)
+    ax.legend(loc="best", fontsize=8)
+    ax.set_title("linear scale")
 
-ax = axes[1]
-ax.scatter(di_p, j_p, s=14, alpha=0.4, color="tab:gray")
-ax.plot(xgrid, a_pw*xgrid**b_pw, "r--", lw=1.4,
-        label=f"power: slope(log-log)={b_pw:+.2f}")
-ax.plot(xgrid, a_ex*np.exp(b_ex*xgrid), "g-.", lw=1.4,
-        label=f"exp: b={b_ex:+.2f}")
-ax.set_xscale("log")
-ax.set_yscale("log")
-ax.set_xlabel("DI (log)")
-ax.set_ylabel(fr"$|J|$ (log)")
-ax.legend(loc="best", fontsize=8)
-ax.set_title("log-log: straight line ⇒ power law")
+    ax = axes[1]
+    ax.scatter(di_p, j_p, s=14, alpha=0.4, color="tab:gray")
+    ax.plot(xgrid, a_pw*xgrid**b_pw, "r--", lw=1.4,
+            label=f"power: slope(log-log)={b_pw:+.2f}")
+    ax.plot(xgrid, a_ex*np.exp(b_ex*xgrid), "g-.", lw=1.4,
+            label=f"exp: b={b_ex:+.2f}")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("DI (log)")
+    ax.set_ylabel(fr"$|J|$ (log)")
+    ax.legend(loc="best", fontsize=8)
+    ax.set_title("log-log: straight line ⇒ power law")
 
-plt.tight_layout()
-plt.savefig("regression_j_di.pdf")
+    for ax in axes:
+        style_axes(ax, LETTER_COLOUR)
+    plt.tight_layout()
+    plt.savefig(f"{PLOT_DIR}/regression_j_di{SUFFIX}.pdf", transparent=TRANSPARENT)
+    plt.close(fig)
 
