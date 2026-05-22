@@ -10,6 +10,7 @@
 $AMSBIN/plams rkf_to_xyz.py 2> /dev/null
 $AMSBIN/plams region_selector.py 2> /dev/null
 $AMSBIN/plams run_generator.py 2> /dev/null
+$AMSBIN/plams populate_intra_dihedral.py
 rm -rf plams_workdir*
 
 # Generate SLURM launchers and upload to CRIANN
@@ -31,4 +32,5 @@ ssh criann 'bash -s' < run_criann.sh
 echo "Updating database with J values..."
 ./output_reader.py
 ./output_warning.py
+./qtaim_reader.py
 

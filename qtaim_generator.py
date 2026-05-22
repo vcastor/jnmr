@@ -5,6 +5,7 @@ import sqlite3
 DB_PATH   = "nmr_jcoupling.db"
 RUN_BASE  = "run_scripts"
 QTAIM_DIR = "run_scripts/qtaim"
+QTAIM_OUT = "amsoutput/qtaim"
 VARIANTS  = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
 PARTITION = "court"
 WALLTIME  = "46:00:00"
@@ -80,6 +81,10 @@ def find_run_file(basename):
         if os.path.exists(path):
             return path
     return None
+
+def find_qtaim_output(basename):
+    path = os.path.join(QTAIM_OUT, f"{basename}.out")
+    return path if os.path.exists(path) else None
 
 def extract_atoms_block(run_file):
     """Return raw atom lines (with original indentation) from System/Atoms."""
@@ -162,46 +167,29 @@ def write_sl(out_path, basename, n_step):
 if __name__ == "__main__":
     os.makedirs(QTAIM_DIR, exist_ok=True)
 
-    conn   = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     steps = find_successful_steps(cursor)
 
-    n_run_new     = 0
-    n_run_kept    = 0
-    n_sl_written  = 0
-    n_skip_no_run = 0
-    n_skip_no_h   = 0
-
     for n_step in steps:
         basename = f"MDStep{n_step}_cluster"
+        if find_qtaim_output(basename) is not None:
+            continue
+
         src = find_run_file(basename)
         if src is None:
-            n_skip_no_run += 1
             continue
 
         h_indices = get_h_indices(cursor, n_step)
         if not h_indices:
-            n_skip_no_h += 1
             continue
 
         run_path = os.path.join(QTAIM_DIR, f"{basename}.run")
         sl_path  = os.path.join(QTAIM_DIR, f"{basename}.sl")
-
-        if os.path.exists(run_path):
-            n_run_kept += 1
-        else:
-            atoms = extract_atoms_block(src)
-            write_qtaim_run(run_path, basename, atoms, h_indices)
-            n_run_new += 1
-
+        atoms = extract_atoms_block(src)
+        write_qtaim_run(run_path, basename, atoms, h_indices)
         write_sl(sl_path, basename, n_step)
-        n_sl_written += 1
 
     conn.close()
-
-    print(f"qtaim: {n_run_new} new run files, {n_run_kept} kept · "
-          f"{n_sl_written} sl (re)written · "
-          f"{n_skip_no_run} skipped (no source) · "
-          f"{n_skip_no_h} skipped (no analysed H)")
 

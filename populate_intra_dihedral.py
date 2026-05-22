@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!$AMSBIN/plams
 import os
 import re
 import glob
@@ -115,6 +115,10 @@ def dihedral(a, b, c, d):
     m1 = np.cross(n1, b2/np.linalg.norm(b2))
     return float(np.arctan2(np.dot(m1, n2), np.dot(n1, n2)))
 
+def distance(a, b):
+    p0, p1 = (np.array(x.coords) for x in (a, b))
+    return float(np.linalg.norm(p1 - p0))
+
 def column_exists(cursor, table, col):
     cursor.execute(f"PRAGMA table_info({table})")
     return any(r[1] == col for r in cursor.fetchall())
@@ -140,6 +144,8 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     if not column_exists(cursor, table, "dihedral"):
         cursor.execute(f"ALTER TABLE {table} ADD COLUMN dihedral REAL")
+    if not column_exists(cursor, table, "distance"):
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN distance REAL")
 
     cluster = Molecule(xf)
     centre  = np.mean(cluster.as_array(), axis=0)
@@ -155,10 +161,11 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                 for h2 in h2s:
                     gi2 = off + choline.atoms.index(h2) + 1
                     theta = abs(dihedral(h1, c1, c2, h2))
+                    dis   = distance(h1, h2)
                     cursor.execute(
-                        f"UPDATE {table} SET dihedral = ? "
+                        f"UPDATE {table} SET dihedral = ?, distance = ? "
                         f"WHERE H_pert = ? AND H_resp = ?",
-                        (theta, gi1, gi2),
+                        (theta, dis, gi1, gi2),
                     )
                     n_updates += cursor.rowcount
     n_tables += 1

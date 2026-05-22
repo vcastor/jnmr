@@ -3,34 +3,9 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
-PLOT_DIR     = "plots"
 CLUSTERS_DIR = "clusters"
 QTAIM_DIR    = "amsoutput/qtaim"
 BP_HEADER    = "BOND PATHS (BP) AND PROPERTIES ALONG THEM ARE WRITTEN TO TAPE21"
-PLOT_STYLES  = [("black", False, ""), ("white", True, "_transparent")]
-
-def find_nh2(urea):
-    """Return [(N, H), ...] for every N-H bond in urea."""
-    pairs = []
-    for n in urea.atoms:
-        if n.symbol != 'N':
-            continue
-        for b in n.bonds:
-            h = b.other_end(n)
-            if h.symbol == 'H':
-                pairs.append((n, h))
-    return pairs
-
-def find_carbonyl(urea):
-    """Return (C, O) of the urea C=O group."""
-    for at in urea.atoms:
-        if at.symbol != 'C':
-            continue
-        nbrs = [b.other_end(at) for b in at.bonds]
-        syms = [a.symbol for a in nbrs]
-        if syms.count('N') == 2 and syms.count('O') == 1:
-            o = next(a for a in nbrs if a.symbol == 'O')
-            return at, o
 
 def find_ch3_groups(choline):
     """Return [(C, [H,H,H]), ...] - the three methyls bonded to N+."""
@@ -68,15 +43,6 @@ def find_ch2_pair(choline):
 def D(a, b):
     return float(np.linalg.norm(np.array(a.coords) - np.array(b.coords)))
 
-def dihedral(a, b, c, d):
-    """Signed dihedral a-b-c-d in radians (range [-pi, pi])."""
-    p0, p1, p2, p3 = (np.array(x.coords) for x in (a, b, c, d))
-    b1, b2, b3 = p1 - p0, p2 - p1, p3 - p2
-    n1 = np.cross(b1, b2)
-    n2 = np.cross(b2, b3)
-    m1 = np.cross(n1, b2/np.linalg.norm(b2))
-    return float(np.arctan2(np.dot(m1, n2), np.dot(n1, n2)))
-
 def read_bcps(path):
     """Set of frozenset({atomA, atomB}) (1-based cluster indices) from QTAIM BOND PATHS."""
     with open(path) as f:
@@ -90,21 +56,28 @@ def read_bcps(path):
         bcps.add(frozenset({int(parts[2]), int(parts[4])}))
     return bcps
 
-# ── accumulators 
-inter_NH_CH3  = ([], [], [])
-inter_Cu_HCH3 = ([], [], [])
-inter_HH_NCH3 = ([], [], [])
-inter_Cu_HCH2 = []
-inter_Nu_HCH2 = []
-inter_HN_HCH2 = []
-bcp_O_HCH2    = []   # O(urea)-H(CH2) at confirmed BCPs
-bcp_N_HCH3    = []   # N(urea)-H(CH3) at confirmed BCPs
+def has_bcp(bcps, a, b):
+    return frozenset({a.cluster_id, b.cluster_id}) in bcps
 
-n_systems_total   = 0
-n_systems_used    = 0
-n_pairs_total     = 0
-n_pairs_O_CH2_BCP = 0
-n_pairs_N_CH3_BCP = 0
+def stats(data):
+    if not data:
+        return "n=0"
+    d = np.array(data)
+    return f"n={len(d)}  mean={d.mean():.3f} A  std={d.std():.3f} A"
+
+# ── accumulators ──────────────────────────────────────────────────────────
+nh2_ch3       = []   # N(urea NH2)-H(CH3) distance, only where that N-H has a BCP
+o_hch2_all    = []   # every O(urea)-H(CH2) distance at a BCP
+o_hch2_bridge = []   # O-H distances where one choline bridges O with BOTH its CH2
+o_hch2_single = []   # O-H distance where O has exactly one CH2 BCP
+
+n_systems_used     = 0
+n_pairs_total      = 0
+n_pairs_nh2_ch3    = 0   # pairs with >=1 N(NH2)-H(CH3) BCP
+n_pairs_o_any      = 0   # pairs with >=1 O-H(CH2) BCP
+n_pairs_o_bridge   = 0   # pairs where O bridges BOTH CH2 of the choline
+n_pairs_o_single   = 0   # pairs where O sees exactly one CH2 H
+n_pairs_o_same_ch2 = 0   # pairs with >=2 BCP but all on the same CH2
 
 # ── main ──────────────────────────────────────────────────────────────────
 init()
@@ -112,7 +85,6 @@ init()
 for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
     if sum(1 for _ in open(xf)) - 2 < 1:
         continue
-    n_systems_total += 1
     base  = os.path.splitext(os.path.basename(xf))[0]
     qpath = os.path.join(QTAIM_DIR, f"{base}.out")
     if not os.path.exists(qpath):
@@ -127,167 +99,82 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     ureas    = [m for m in mols if m.get_formula() == 'CH4N2O']
     cholines = [m for m in mols if m.get_formula() == 'C5H14NO']
-
-    bcps = read_bcps(qpath)
+    bcps     = read_bcps(qpath)
 
     for u in ureas:
-        c_urea, o_urea = find_carbonyl(u)
-        n_urea_atoms   = [at for at in u.atoms if at.symbol == 'N']
-        nh2_pairs      = find_nh2(u)
+        n_urea = [at for at in u.atoms if at.symbol == 'N']
+        o_urea = next(at for at in u.atoms if at.symbol == 'O')
         for ch in cholines:
             n_pairs_total += 1
-            ch3 = find_ch3_groups(ch)
+
+            # N(urea NH2) - H(CH3): keep ONLY the H that has a BCP with the N,
+            # never the rest of that CH3
+            nh2_hit = False
+            for n in n_urea:
+                for _, hs in find_ch3_groups(ch):
+                    for h in hs:
+                        if has_bcp(bcps, n, h):
+                            nh2_ch3.append(D(n, h))
+                            nh2_hit = True
+            if nh2_hit:
+                n_pairs_nh2_ch3 += 1
+
+            # O(urea) - H(CH2): inspect the two CH2 of THIS choline separately
             _, hN, _, hO = find_ch2_pair(ch)
-            ch2_hs = hN + hO
-
-            o_ch2_hits = [h for h in ch2_hs
-                          if frozenset({o_urea.cluster_id, h.cluster_id}) in bcps]
-            n_ch3_hits = [(n_u, h) for _, hs in ch3 for h in hs for n_u in n_urea_atoms
-                          if frozenset({n_u.cluster_id, h.cluster_id}) in bcps]
-
-            if o_ch2_hits:
-                n_pairs_O_CH2_BCP += 1
-                for h in o_ch2_hits:
-                    bcp_O_HCH2.append(D(o_urea, h))
-                for h in ch2_hs:
-                    inter_Cu_HCH2.append(D(c_urea, h))
-                    for n_u in n_urea_atoms:
-                        inter_Nu_HCH2.append(D(n_u, h))
-                    for _, h_nh2 in nh2_pairs:
-                        inter_HN_HCH2.append(D(h_nh2, h))
-
-            if n_ch3_hits:
-                n_pairs_N_CH3_BCP += 1
-                for n_u, h in n_ch3_hits:
-                    bcp_N_HCH3.append(D(n_u, h))
-                for n_nh2, h_nh2 in nh2_pairs:
-                    ranked = sorted(range(len(ch3)),
-                                    key=lambda gi: D(ch3[gi][0], n_nh2))
-                    for rank, gi in enumerate(ranked):
-                        c_ch3, hs = ch3[gi]
-                        for h_ch3 in hs:
-                            inter_NH_CH3[rank].append(D(n_nh2, h_ch3))
-                            inter_Cu_HCH3[rank].append(D(c_urea, h_ch3))
-                            inter_HH_NCH3[rank].append(D(h_nh2, h_ch3))
+            hits_N = [h for h in hN if has_bcp(bcps, o_urea, h)]
+            hits_O = [h for h in hO if has_bcp(bcps, o_urea, h)]
+            hits   = hits_N + hits_O
+            if not hits:
+                continue
+            n_pairs_o_any += 1
+            for h in hits:
+                o_hch2_all.append(D(o_urea, h))
+            if hits_N and hits_O:                 # both CH2 bridge the same O
+                n_pairs_o_bridge += 1
+                for h in hits:
+                    o_hch2_bridge.append(D(o_urea, h))
+            elif len(hits) == 1:                  # O sees a single H
+                n_pairs_o_single += 1
+                o_hch2_single.append(D(o_urea, hits[0]))
+            else:                                 # >=2 BCP but on one CH2 only
+                n_pairs_o_same_ch2 += 1
 
 finish()
 
-# ── stats ────────────────────────────────────────────────────────────────
-def stats(data):
-    if not data:
-        return "n=0"
-    d = np.array(data)
-    return f"n={len(d)}  mean={d.mean():.3f} A  std={d.std():.3f} A"
-
-# ── plotting ─────────────────────────────────────────────────────────────
-def hist(ax, data, label, color, bins=40):
-    ax.hist(data, bins=bins, alpha=0.5, label=label,
-            color=color, edgecolor=LETTER_COLOUR)
-
-def style_axes(ax):
-    ax.set_facecolor("none")
-    for spine in ax.spines.values():
-        spine.set_color(LETTER_COLOUR)
-    ax.tick_params(colors=LETTER_COLOUR, which="both")
-    ax.xaxis.label.set_color(LETTER_COLOUR)
-    ax.yaxis.label.set_color(LETTER_COLOUR)
-    ax.title.set_color(LETTER_COLOUR)
-    leg = ax.get_legend()
-    if leg is not None:
-        leg.get_frame().set_facecolor("none")
-        leg.get_frame().set_edgecolor(LETTER_COLOUR)
-        for t in leg.get_texts():
-            t.set_color(LETTER_COLOUR)
-
-def style_cbar(cbar):
-    cbar.ax.tick_params(colors=LETTER_COLOUR)
-    cbar.ax.yaxis.label.set_color(LETTER_COLOUR)
-    cbar.outline.set_edgecolor(LETTER_COLOUR)
-
-for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
-    # BCP-direct distances
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
-    hist(axes[0], bcp_O_HCH2, "O(urea)-H(CH2)", "steelblue")
-    axes[0].set_title("QTAIM-confirmed O(urea) - H(CH2)")
-    axes[0].set_xlabel("distance (A)")
-    axes[0].legend()
-    hist(axes[1], bcp_N_HCH3, "N(urea)-H(CH3)", "seagreen")
-    axes[1].set_title("QTAIM-confirmed N(urea) - H(CH3)")
-    axes[1].set_xlabel("distance (A)")
-    axes[1].legend()
-    for ax in axes:
-        style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/distance_qtaim_bcp{SUFFIX}.pdf", transparent=TRANSPARENT)
-    plt.close(fig)
-
-    # inter NH2-CH3 (QTAIM-filtered)
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    colors = ["steelblue", "darkorange", "seagreen"]
-    labels = ["closest CH3", "mid CH3", "far CH3"]
-    for k, (c, l) in enumerate(zip(colors, labels)):
-        hist(axes[0], inter_NH_CH3[k],  l, c)
-        hist(axes[1], inter_Cu_HCH3[k], l, c)
-        hist(axes[2], inter_HH_NCH3[k], l, c)
-    axes[0].set_title("Inter · N(NH2) - H(CH3) [QTAIM-filtered]")
-    axes[0].set_xlabel("distance (A)")
-    axes[0].legend()
-    axes[1].set_title("Inter · C(urea) - H(CH3) [QTAIM-filtered]")
-    axes[1].set_xlabel("distance (A)")
-    axes[1].legend()
-    axes[2].set_title("Inter · H(NH2) - H(CH3) [QTAIM-filtered]")
-    axes[2].set_xlabel("distance (A)")
-    axes[2].legend()
-    for ax in axes:
-        style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/distance_qtaim_inter_NH2_CH3{SUFFIX}.pdf", transparent=TRANSPARENT)
-    plt.close(fig)
-
-    # inter urea-CH2 (QTAIM-filtered)
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    hist(axes[0], inter_Cu_HCH2, "C(urea)-H(CH2)", "steelblue")
-    axes[0].set_title("Inter · C(urea) - H(CH2) [QTAIM-filtered]")
-    axes[0].set_xlabel("distance (A)")
-    axes[0].legend()
-    hist(axes[1], inter_Nu_HCH2, "N(NH2)-H(CH2)", "seagreen")
-    axes[1].set_title("Inter · N(NH2) - H(CH2) [QTAIM-filtered]")
-    axes[1].set_xlabel("distance (A)")
-    axes[1].legend()
-    hist(axes[2], inter_HN_HCH2, "H(NH2)-H(CH2)", "darkorange")
-    axes[2].set_title("Inter · H(NH2) - H(CH2) [QTAIM-filtered]")
-    axes[2].set_xlabel("distance (A)")
-    axes[2].legend()
-    for ax in axes:
-        style_axes(ax)
-    fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/distance_qtaim_inter_urea_CH2{SUFFIX}.pdf", transparent=TRANSPARENT)
-    plt.close(fig)
-
-print(f"systems: {n_systems_used}/{n_systems_total} with QTAIM data")
-print(f"urea-choline pairs: {n_pairs_total} total · "
-      f"{n_pairs_O_CH2_BCP} with O-CH2 BCP · "
-      f"{n_pairs_N_CH3_BCP} with N-CH3 BCP")
+# ── report ────────────────────────────────────────────────────────────────
+print(f"systems with QTAIM data: {n_systems_used}")
+print(f"urea-choline pairs:      {n_pairs_total}")
 print()
-print("BCP-confirmed O(urea) - H(CH2):")
-print(f"  {stats(bcp_O_HCH2)}")
-print("BCP-confirmed N(urea) - H(CH3):")
-print(f"  {stats(bcp_N_HCH3)}")
+print("N(urea NH2) - H(CH3)  [only the H that has a BCP with the N]")
+print(f"  pairs with >=1 such BCP: {n_pairs_nh2_ch3}/{n_pairs_total}")
+print(f"  {stats(nh2_ch3)}")
 print()
+print("O(urea) - H(CH2 choline)  [only the H that has a BCP with the O]")
+print(f"  pairs with >=1 O-H(CH2) BCP: {n_pairs_o_any}/{n_pairs_total}")
+print(f"  all BCP distances:                {stats(o_hch2_all)}")
+print(f"  O bridges BOTH CH2  ({n_pairs_o_bridge:3d} pairs): {stats(o_hch2_bridge)}")
+print(f"  O sees only ONE H   ({n_pairs_o_single:3d} pairs): {stats(o_hch2_single)}")
+print(f"  >=2 BCP, same CH2   ({n_pairs_o_same_ch2:3d} pairs)")
 
-print("Inter · N(NH2) - H(CH3) [QTAIM-filtered]:")
-for k, l in enumerate(labels):
-    print(f"  {l}: {stats(inter_NH_CH3[k])}")
-print("Inter · C(urea) - H(CH3) [QTAIM-filtered]:")
-for k, l in enumerate(labels):
-    print(f"  {l}: {stats(inter_Cu_HCH3[k])}")
-print("Inter · H(NH2) - H(CH3) [QTAIM-filtered]:")
-for k, l in enumerate(labels):
-    print(f"  {l}: {stats(inter_HH_NCH3[k])}")
-print("Inter · C(urea) - H(CH2) [QTAIM-filtered]:")
-print(f"  {stats(inter_Cu_HCH2)}")
-print("Inter · N(NH2) - H(CH2) [QTAIM-filtered]:")
-print(f"  {stats(inter_Nu_HCH2)}")
-print("Inter · H(NH2) - H(CH2) [QTAIM-filtered]:")
-print(f"  {stats(inter_HN_HCH2)}")
+# ── distributions (display only) ──────────────────────────────────────────
+fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
 
+axes[0].hist(nh2_ch3, bins=30, color="seagreen", edgecolor="black", alpha=0.7)
+axes[0].set_title("N(urea NH2) - H(CH3)  [BCP only]")
+axes[0].set_xlabel("distance (A)")
+axes[0].set_ylabel("count")
+
+axes[1].hist(o_hch2_all, bins=30, color="steelblue", edgecolor="black", alpha=0.7)
+axes[1].set_title("O(urea) - H(CH2)  [all BCP]")
+axes[1].set_xlabel("distance (A)")
+
+axes[2].hist(o_hch2_bridge, bins=20, color="darkorange", edgecolor="black", alpha=0.6,
+             label=f"both CH2 bridge (n={len(o_hch2_bridge)})")
+axes[2].hist(o_hch2_single, bins=20, color="crimson", edgecolor="black", alpha=0.6,
+             label=f"single H (n={len(o_hch2_single)})")
+axes[2].set_title("O(urea) - H(CH2)  bridge vs single")
+axes[2].set_xlabel("distance (A)")
+axes[2].legend()
+
+fig.tight_layout()
+plt.show()

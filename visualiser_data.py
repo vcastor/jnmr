@@ -18,9 +18,9 @@ VARIANTS = [
 
 # experimental values
 EXP_INTRA     = 5.9
+EXP_INTRA_ERR = 0.24
 EXP_INTER     = 1.104
 EXP_INTER_ERR = 0.031
-EXP_INTRA_ERR = 0.24
 
 def table_exists(cursor, table_name):
     cursor.execute(
@@ -137,7 +137,7 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
         ax.plot(x, kde(x), color=color, linewidth=2.5, label=leg)
         ax.axvline(mean, color=color, linestyle=":", linewidth=1.5, alpha=0.8)
     if exp_mean is not None:
-        exp_label = (f"Exp = {exp_mean}±{exp_std} Hz" if exp_std is not None
+        exp_label = (r"J$_\mathrm{exp}$"+f" = {exp_mean}±{exp_std} Hz" if exp_std is not None
                      else f"Exp = {exp_mean} Hz")
         ax.axvline(exp_mean, color=LETTER_COLOUR, ls="--", linewidth=1.8, label=exp_label)
         if exp_std is not None:
@@ -195,7 +195,7 @@ for variant, label, color in VARIANTS:
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
-                 f"hist_intra{SUFFIX}.pdf", exp_mean=EXP_INTRA)
+                 f"hist_intra{SUFFIX}.pdf", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR)
     plot_overlay(inter_data, "Intermolecular J coupling (NH2-CH3)",
                  f"hist_inter{SUFFIX}.pdf", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR)
 

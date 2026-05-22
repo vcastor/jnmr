@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 PLOT_DIR     = "plots"
 CLUSTERS_DIR = "clusters"
-THR_NH2_CH3  = 4.0    # H(NH2)-H(CH3) cutoff
+THR_NH2_CH3  = 2.3    # H(NH2)-H(CH3) cutoff
 THR_UREA_CH2 = 3.0    # O(urea)-H(CH2) cutoff
 
 PLOT_STYLES = [('black', False, ''), ('white', True, '_transparent')]
