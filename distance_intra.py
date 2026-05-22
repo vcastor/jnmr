@@ -5,6 +5,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
+from matplotlib.colors import LogNorm
 
 PLOT_DIR     = "plots"
 CLUSTERS_DIR = "clusters"
@@ -150,7 +151,9 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     axes[0,0].set_title(r"Intra $\cdot$ N$-$H of urea")
     axes[0,0].set_xlabel(r"distance (\AA)")
     axes[0,0].set_ylabel("density")
-    axes[0,0].legend()
+    axes[0,0].legend(loc="upper right")
+    ymax = axes[0,0].get_ylim()[1]
+    axes[0,0].set_ylim(0, ymax*1.1)
 
     hb = axes[0,1].hexbin(intra_HH_dih, intra_HH, gridsize=40, cmap="Oranges", mincnt=1)
     cbar = fig.colorbar(hb, ax=axes[0,1], label="count")
@@ -169,13 +172,15 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     axes[1,0].set_ylabel("density")
     axes[1,0].legend(loc='upper right')
     ymax = axes[1,0].get_ylim()[1]
-    axes[1,0].set_ylim(0, ymax*1.45)
+    axes[1,0].set_ylim(0, ymax*1.15)
 
     hist(axes[1,1], intra_CH_urea, mlabel(r"C$-$H", intra_CH_urea), "indianred")
     axes[1,1].set_title(r"Intra $\cdot$ C$-$H of urea")
     axes[1,1].set_xlabel(r"distance (\AA)")
     axes[1,1].set_ylabel("density")
-    axes[1,1].legend()
+    axes[1,1].legend(loc='upper right')
+    ymax = axes[1,1].get_ylim()[1]
+    axes[1,1].set_ylim(0, ymax*1.05)
 
     for ax in axes.ravel():
         style_axes(ax)

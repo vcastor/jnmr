@@ -21,6 +21,11 @@ for var in config["variants"]:
     output_dir = var["output_dir"]
     comment_col = f"comment_{variant}"
 
+    # Clear stale warnings first: a previously-failing calc may have been rerun
+    # and now converges, in which case the old comment must not stick around
+    # (otherwise the step is silently excluded from karplus/visualiser/qtaim).
+    cursor.execute(f"UPDATE snapshots SET {comment_col} = NULL")
+
     for pattern, message in [
         ("SCF MODERATELY CONVERGED", "SCF MODERATELY CONVERGED"),
         ("SCF NOT CONVERGED",        "SCF NOT CONVERGED"),

@@ -429,53 +429,59 @@ def add_snapshot_to_db(
     ''', (n_step, n_choline, n_inter))
 
     # ── intra table ─────────────────────────────────────────────────────
+    # Only populate on first creation; re-running this script must NOT wipe
+    # J / dihedral / distance / DI values filled in by the reader scripts.
     intra_table = f"step_{n_step}_intra"
-    cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {intra_table} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            H_pert      INTEGER,
-            H_resp      INTEGER,
-            J_TZ2P_FC   REAL,
-            J_TZ2P_all  REAL,
-            J_TZ2PJ_FC  REAL,
-            J_TZ2PJ_all REAL
-        )
-    ''')
-    cursor.execute(f"DELETE FROM {intra_table}")
-
-    for ci in sorted(intra_interactions.keys()):
-        for h1, h2_list in intra_interactions[ci]:
-            for h2 in h2_list:
-                cursor.execute(f'''
-                    INSERT INTO {intra_table} (H_pert, H_resp)
-                    VALUES (?, ?)
-                ''', (h1, h2))
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (intra_table,))
+    if cursor.fetchone() is None:
+        cursor.execute(f'''
+            CREATE TABLE {intra_table} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                H_pert      INTEGER,
+                H_resp      INTEGER,
+                J_TZ2P_FC   REAL,
+                J_TZ2P_all  REAL,
+                J_TZ2PJ_FC  REAL,
+                J_TZ2PJ_all REAL
+            )
+        ''')
+        for ci in sorted(intra_interactions.keys()):
+            for h1, h2_list in intra_interactions[ci]:
+                for h2 in h2_list:
+                    cursor.execute(f'''
+                        INSERT INTO {intra_table} (H_pert, H_resp)
+                        VALUES (?, ?)
+                    ''', (h1, h2))
 
     # ── inter table ─────────────────────────────────────────────────────
     inter_table = f"step_{n_step}_inter"
-    cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {inter_table} (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            H_pert      INTEGER,
-            H_resp      INTEGER,
-            distance    REAL,
-            is_main     INTEGER DEFAULT 0,
-            J_TZ2P_FC   REAL,
-            J_TZ2P_all  REAL,
-            J_TZ2PJ_FC  REAL,
-            J_TZ2PJ_all REAL
-        )
-    ''')
-    cursor.execute(f"DELETE FROM {inter_table}")
-
-    # is_main is already computed per contact by inter_nh2_ch3_interactions
-    for inter in inter_interactions:
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (inter_table,))
+    if cursor.fetchone() is None:
         cursor.execute(f'''
-            INSERT INTO {inter_table}
-                (H_pert, H_resp, distance, is_main)
-            VALUES (?, ?, ?, ?)
-        ''', (inter['H_urea'], inter['H_choline'],
-              inter['distance'], inter['is_main']))
+            CREATE TABLE {inter_table} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                H_pert      INTEGER,
+                H_resp      INTEGER,
+                distance    REAL,
+                is_main     INTEGER DEFAULT 0,
+                J_TZ2P_FC   REAL,
+                J_TZ2P_all  REAL,
+                J_TZ2PJ_FC  REAL,
+                J_TZ2PJ_all REAL
+            )
+        ''')
+        # is_main is already computed per contact by inter_nh2_ch3_interactions
+        for inter in inter_interactions:
+            cursor.execute(f'''
+                INSERT INTO {inter_table}
+                    (H_pert, H_resp, distance, is_main)
+                VALUES (?, ?, ?, ?)
+            ''', (inter['H_urea'], inter['H_choline'],
+                  inter['distance'], inter['is_main']))
 
     conn.commit()
     conn.close()
