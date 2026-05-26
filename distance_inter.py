@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 PLOT_DIR     = "plots"
 CLUSTERS_DIR = "clusters"
-THR_NH2_CH3  = 6.6    # H(NH2)-H(CH3) cutoff
+THR_NH2_CH3  = 4.0    # H(NH2)-H(CH3) cutoff
 THR_UREA_CH2 = 3.0    # O(urea)-H(CH2) cutoff
 
 PLOT_STYLES = [('black', False, ''), ('white', True, '_transparent')]
@@ -57,17 +57,17 @@ def find_ch2_pair(choline):
             return c2, h2, c1, h1
 
 def D(a, b):
-    return float(np.linalg.norm(np.array(a.coords) - np.array(b.coords)))
+    return float(np.linalg.norm(np.array(a.coords)-np.array(b.coords)))
 
 # NH2-CH3
 inter_NH_CH3   = []
 inter_Cu_HCH3  = []
 inter_HH_NCH3  = []
-# urea-CH2 single bridge (one H on either CH2 close to O)
+# urea-CH2 HCH-O-HCH (one H per CH2 below cutoff)
 inter_Ou_HCH2  = []
 inter_Nu_HCH2  = []
 inter_HN_HCH2  = []
-# urea-CH2 double bridge (one H from each CH2, both close to O)
+# urea-CH2 double bridge (split by which CH2 the H belongs to)
 inter_Ou_HCH2_dbl_N = []   # O-H, H comes from CH2 adjacent to N+
 inter_Ou_HCH2_dbl_O = []   # O-H, H comes from CH2 adjacent to O
 inter_Nu_HCH2_dbl   = []
@@ -108,31 +108,30 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         for ch in cholines:
             _, hN, _, hO = find_ch2_pair(ch)
 
-            # single bridge: any H from either CH2 close to O
-            for h in hN+hO:
-                d = D(o_urea, h)
-                if d <= THR_UREA_CH2:
-                    inter_Ou_HCH2.append(d)
-                    n_nh2, h_nh2_list = min(nh2_groups, key=lambda g: D(g[0], h))
-                    inter_Nu_HCH2.append(D(n_nh2, h))
-                    for h_nh2 in h_nh2_list:
-                        inter_HN_HCH2.append(D(h_nh2, h))
-
-            # double bridge: simultaneously one H from CH2_N AND one H from CH2_O,
-            # each within the same THR_UREA_CH2 of the urea O
             close_N = [(h, D(o_urea, h)) for h in hN if D(o_urea, h) <= THR_UREA_CH2]
             close_O = [(h, D(o_urea, h)) for h in hO if D(o_urea, h) <= THR_UREA_CH2]
-            if close_N and close_O:
-                n_dbl_events += 1
-                for hNa, dN in close_N:
-                    for hOa, dO in close_O:
-                        inter_Ou_HCH2_dbl_N.append(dN)
-                        inter_Ou_HCH2_dbl_O.append(dO)
-                        for hh in (hNa, hOa):
-                            n_nh2, h_nh2_list = min(nh2_groups, key=lambda g: D(g[0], hh))
-                            inter_Nu_HCH2_dbl.append(D(n_nh2, hh))
-                            for h_nh2 in h_nh2_list:
-                                inter_HN_HCH2_dbl.append(D(h_nh2, hh))
+            if not (close_N and close_O):
+                continue
+
+            # HCH-O-HCH: one H per CH2 within cutoff, record each close H
+            for h, d in close_N+close_O:
+                inter_Ou_HCH2.append(d)
+                n_nh2, h_nh2_list = min(nh2_groups, key=lambda g: D(g[0], h))
+                inter_Nu_HCH2.append(D(n_nh2, h))
+                for h_nh2 in h_nh2_list:
+                    inter_HN_HCH2.append(D(h_nh2, h))
+
+            # double bridge stats split by which CH2 the H sits on
+            n_dbl_events += 1
+            for hNa, dN in close_N:
+                for hOa, dO in close_O:
+                    inter_Ou_HCH2_dbl_N.append(dN)
+                    inter_Ou_HCH2_dbl_O.append(dO)
+                    for hh in (hNa, hOa):
+                        n_nh2, h_nh2_list = min(nh2_groups, key=lambda g: D(g[0], hh))
+                        inter_Nu_HCH2_dbl.append(D(n_nh2, hh))
+                        for h_nh2 in h_nh2_list:
+                            inter_HN_HCH2_dbl.append(D(h_nh2, hh))
 
 finish()
 
@@ -187,12 +186,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig.savefig(f"{PLOT_DIR}/distance_inter_NH2_CH3{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)
 
-    # urea-CH2 single bridge
+    # urea-CH2 HCH-O-HCH
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
     hist(axes[0], inter_Ou_HCH2, mlabel(r"O(urea)$-$H(CH$_2$)", inter_Ou_HCH2), "steelblue")
     hist(axes[1], inter_Nu_HCH2, mlabel(r"N(urea)$-$H(CH$_2$)", inter_Nu_HCH2), "seagreen")
     hist(axes[2], inter_HN_HCH2, mlabel(r"H(NH$_2$)$-$H(CH$_2$)", inter_HN_HCH2), "darkorange")
-    axes[0].set_title(rf"Inter $\cdot$ O(urea)$-$H(CH$_2$)  [cutoff {THR_UREA_CH2} \AA]")
+    axes[0].set_title(rf"Inter $\cdot$ O(urea)$-$H(CH$_2$)  [HCH-O-HCH, cutoff {THR_UREA_CH2} \AA]")
     axes[1].set_title(r"Inter $\cdot$ N(urea)$-$H(CH$_2$)")
     axes[2].set_title(r"Inter $\cdot$ H(NH$_2$)$-$H(CH$_2$)")
     for ax in axes:
@@ -200,6 +199,8 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
         ax.set_ylabel("density")
         ax.legend()
         style_axes(ax)
+    ymax = axes[2].get_ylim()[1]
+    axes[2].set_ylim(0, ymax*1.1)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/distance_inter_urea_CH2{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)
@@ -223,13 +224,15 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
         ax.set_ylabel("density")
         ax.legend()
         style_axes(ax)
+    ymax = axes[2].get_ylim()[1]
+    axes[2].set_ylim(0, ymax*1.1)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/distance_inter_urea_CH2_double{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)
 
 print(f"inter NH2-CH3 (cutoff {THR_NH2_CH3} Å): "
       f"N-H={len(inter_NH_CH3)}  C-H={len(inter_Cu_HCH3)}  H-H={len(inter_HH_NCH3)}")
-print(f"inter urea-CH2 single bridge (cutoff {THR_UREA_CH2} Å on O-H): "
+print(f"inter urea-CH2 HCH-O-HCH (cutoff {THR_UREA_CH2} Å, one H per CH2): "
       f"O-H={len(inter_Ou_HCH2)}  N-H={len(inter_Nu_HCH2)}  H-H={len(inter_HN_HCH2)}")
 print(f"inter urea-CH2 double bridge (both H within {THR_UREA_CH2} Å): "
       f"events={n_dbl_events}  "
@@ -243,11 +246,11 @@ print(stats(inter_Cu_HCH3))
 print("\nInter · H(NH2)-H(CH3):")
 print(stats(inter_HH_NCH3))
 
-print("\nInter · O(urea)-H(CH2) [single bridge]:")
+print("\nInter · O(urea)-H(CH2) [HCH-O-HCH]:")
 print(stats(inter_Ou_HCH2))
-print("\nInter · N(urea)-H(CH2) [single bridge]:")
+print("\nInter · N(urea)-H(CH2) [HCH-O-HCH]:")
 print(stats(inter_Nu_HCH2))
-print("\nInter · H(NH2)-H(CH2) [single bridge]:")
+print("\nInter · H(NH2)-H(CH2) [HCH-O-HCH]:")
 print(stats(inter_HN_HCH2))
 
 print("\nInter · O(urea)-H(CH2) [double bridge, CH2 near N+]:")
