@@ -87,14 +87,9 @@ def write_molecules_xyz(molecules: List['Molecule'], filename: str, comment: str
             for atom in mol.atoms:
                 f.write(f"{atom.symbol:>4s} {atom.x:>14.8f} {atom.y:>14.8f} {atom.z:>14.8f}\n")
 
-# ============================ #
-#           Main
-# ============================ #
-
+# ── main ──────────────────────────────────────────────────────────────────
 init()
 
-#
-# Input default options
 config_input = {
     'xyz_dir': 'mdStepsxyz',
     'cluster_dir': 'clusters',

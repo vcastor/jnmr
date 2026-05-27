@@ -3,33 +3,17 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from hassan_functions.db import table_exists
+from hassan_functions.io import read_xyz
+from hassan_functions.constants import (ISOTOPE_FOR_SYMBOL, GAMMA,
+                                        MU0_OVER_4PI, HBAR, TWO_PI,
+                                        ANGSTROM_TO_M)
 
 DB_PATH  = Path("nmr_jcoupling.db")
 XYZ_DIR  = Path("clusters")
 PLOT_DIR = "plots"
 
 DB_INDICES_ARE_1_BASED = True
-
-ISOTOPE_FOR_SYMBOL = {
-   "H":  "1H",
-   "C":  "13C",
-   "N":  "15N",
-   "O":  "17O",
-   "Cl": "35Cl",
-}
-
-GAMMA = {
-   "1H":  2.6752218744e8,
-   "13C": 6.728284e7,
-   "15N": -2.71261804e7,
-   "17O": -3.62808e7,
-   "35Cl": 2.624198e7,
-}
-
-MU0_OVER_4PI  = 1.0e-7
-HBAR          = 1.054571817e-34
-TWO_PI        = 2.0*np.pi
-ANGSTROM_TO_M = 1.0e-10
 
 MODE = "inter"
 
@@ -58,28 +42,6 @@ ROT_Z_ANGLES = [
    np.pi/2.0,
    3.0*np.pi/4.0,
 ]
-
-def table_exists(con, name):
-   cur = con.execute(
-      "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
-      (name,)
-   )
-   return cur.fetchone()[0] > 0
-
-def normalise_symbol(sym):
-   return sym[0].upper() + sym[1:].lower()
-
-def read_xyz(path):
-   lines  = path.read_text().splitlines()
-   natoms = int(lines[0].strip())
-   symbols, coords = [], []
-   for line in lines[2:2+natoms]:
-      parts = line.split()
-      sym = normalise_symbol(parts[0])
-      xyz = np.array([float(parts[1]), float(parts[2]), float(parts[3])], dtype=float)
-      symbols.append(sym)
-      coords.append(xyz)
-   return symbols, np.array(coords, dtype=float)
 
 def db_index_to_xyz_index(idx):
    return idx - 1 if DB_INDICES_ARE_1_BASED else idx

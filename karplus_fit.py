@@ -3,19 +3,18 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
+from hassan_functions.db import column_exists
+from hassan_functions.plotting import PLOT_STYLES, style_axes
+
 plt.rcParams["text.usetex"]         = True
 plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
 
-PLOT_DIR    = "plots"
-DB_PATH     = "nmr_jcoupling.db"
-VARIANTS    = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
-COLORS      = {"TZ2P_FC":  "tab:green",
-               "TZ2P_all": "tab:blue",
-               "TZ2PJ_FC": "tab:orange",
-               "TZ2PJ_all":"tab:purple"}
+PLOT_DIR = "plots"
+DB_PATH  = "nmr_jcoupling.db"
+VARIANT  = "TZ2P_FC"
+J_COL    = f"J_{VARIANT}"
 
 DIST_FORMS = {
-    "none":      None,
     "linear":    lambda d: d,
     "quadratic": lambda d: d*d,
     "cubic":     lambda d: d*d*d,
@@ -23,149 +22,151 @@ DIST_FORMS = {
     "sqrt":      lambda d: np.sqrt(d),
 }
 
-PLOT_STYLES = [("black", False, ""), ("white", True, "_transparent")]
-
-
-def column_exists(cursor, table, col):
-    cursor.execute(f"PRAGMA table_info({table})")
-    return any(r[1] == col for r in cursor.fetchall())
-
-
-def fit_model(c, fd, js):
-    if fd is None:
-        X = np.column_stack([np.ones_like(c), c, c*c])
-    else:
-        X = np.column_stack([np.ones_like(c), c, c*c, fd])
-    coeffs, *_ = np.linalg.lstsq(X, js, rcond=None)
-    resid  = js - X@coeffs
+def fit_lstsq(X, y):
+    coeffs, *_ = np.linalg.lstsq(X, y, rcond=None)
+    resid  = y - X@coeffs
     n, p   = X.shape
     sigma2 = (resid@resid)/(n - p)
     errs   = np.sqrt(np.diag(sigma2*np.linalg.inv(X.T@X)))
     rmse   = np.sqrt(np.mean(resid**2))
     return coeffs, errs, rmse
 
-
-def style_axes(ax, letter_colour):
-    ax.set_facecolor("none")
-    for spine in ax.spines.values():
-        spine.set_color(letter_colour)
-    ax.tick_params(colors=letter_colour, which="both")
-    ax.xaxis.label.set_color(letter_colour)
-    ax.yaxis.label.set_color(letter_colour)
-    ax.title.set_color(letter_colour)
-    leg = ax.get_legend()
-    if leg is not None:
-        leg.get_frame().set_facecolor("none")
-        leg.get_frame().set_edgecolor(letter_colour)
-        for t in leg.get_texts():
-            t.set_color(letter_colour)
-
+def print_fit(label, names, coeffs, errs, rmse):
+    parts = "  ".join(f"{n}={v:+.4f}±{e:.4f}"
+                      for n, v, e in zip(names, coeffs, errs))
+    print(f"  [{label:<26}] {parts}  RMSE={rmse:.4f} Hz")
 
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
-results = {}
-for variant in VARIANTS:
-    j_col = f"J_{variant}"
-    cursor.execute(f"SELECT n_step FROM snapshots WHERE comment_{variant} IS NULL")
-    steps = sorted(r[0] for r in cursor.fetchall())
+cursor.execute(f"SELECT n_step FROM snapshots WHERE comment_{VARIANT} IS NULL")
+steps = sorted(r[0] for r in cursor.fetchall())
 
-    thetas, dists, js = [], [], []
-    for n_step in steps:
-        t = f"step_{n_step}_intra"
-        cursor.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            (t,),
-        )
-        if cursor.fetchone() is None:                 continue
-        if not column_exists(cursor, t, "dihedral"):  continue
-        if not column_exists(cursor, t, "distance"):  continue
-        if not column_exists(cursor, t, j_col):       continue
-        cursor.execute(
-            f"SELECT dihedral, distance, {j_col} FROM {t} "
-            f"WHERE dihedral IS NOT NULL AND distance IS NOT NULL "
-            f"AND {j_col} IS NOT NULL"
-        )
-        for theta, d, j in cursor.fetchall():
-            thetas.append(theta)
-            dists.append(d)
-            js.append(j)
-
-    if not thetas:
-        print(f"{variant}: no data")
-        continue
-
-    thetas = np.asarray(thetas, dtype=float)
-    dists  = np.asarray(dists,  dtype=float)
-    js     = np.abs(np.asarray(js, dtype=float))
-    c      = np.cos(thetas)
-
-    print(f"\n=== {variant}: n = {thetas.size}, "
-          f"d in [{dists.min():.3f}, {dists.max():.3f}] ===")
-
-    variant_fits = {}
-    for name, func in DIST_FORMS.items():
-        fd = None if func is None else func(dists)
-        coeffs, errs, rmse = fit_model(c, fd, js)
-        variant_fits[name] = (coeffs, errs, rmse)
-        if func is None:
-            a, b, g       = coeffs
-            da, db, dg    = errs
-            print(f"  [{name:<9}] a={a:+.4f}±{da:.4f}  "
-                  f"b={b:+.4f}±{db:.4f}  g={g:+.4f}±{dg:.4f}  "
-                  f"RMSE={rmse:.4f} Hz")
-        else:
-            a, b, g, dlt   = coeffs
-            da, db, dg, dd = errs
-            print(f"  [{name:<9}] a={a:+.4f}±{da:.4f}  "
-                  f"b={b:+.4f}±{db:.4f}  g={g:+.4f}±{dg:.4f}  "
-                  f"d={dlt:+.4f}±{dd:.4f}  RMSE={rmse:.4f} Hz")
-
-    results[variant] = dict(thetas=thetas, dists=dists, js=js, fits=variant_fits)
+thetas, dists, dis, js = [], [], [], []
+for n_step in steps:
+    t = f"step_{n_step}_intra"
+    cursor.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (t,),
+    )
+    if cursor.fetchone() is None:                 continue
+    if not column_exists(cursor, t, "dihedral"):  continue
+    if not column_exists(cursor, t, "distance"):  continue
+    if not column_exists(cursor, t, "DI"):        continue
+    if not column_exists(cursor, t, J_COL):       continue
+    cursor.execute(
+        f"SELECT dihedral, distance, DI, {J_COL} FROM {t} "
+        f"WHERE dihedral IS NOT NULL AND distance IS NOT NULL "
+        f"AND DI IS NOT NULL AND {J_COL} IS NOT NULL"
+    )
+    for theta, d, di, j in cursor.fetchall():
+        thetas.append(theta)
+        dists.append(d)
+        dis.append(di)
+        js.append(j)
 
 conn.close()
 
-print("\n=== RMSE summary (Hz) ===")
-print(f"{'variant':<12}" + "".join(f"{n:>11}" for n in DIST_FORMS))
-for variant in VARIANTS:
-    if variant not in results:
-        continue
-    row = f"{variant:<12}"
-    for name in DIST_FORMS:
-        row += f"{results[variant]['fits'][name][2]:>11.4f}"
-    print(row)
+thetas = np.asarray(thetas, dtype=float)
+dists  = np.asarray(dists,  dtype=float)
+dis    = np.asarray(dis,    dtype=float)
+js     = np.abs(np.asarray(js, dtype=float))
+c      = np.cos(thetas)
+ones   = np.ones_like(c)
 
+print(f"=== {VARIANT}: n = {thetas.size}, "
+      f"d in [{dists.min():.3f}, {dists.max():.3f}], "
+      f"DI in [{dis.min():.3f}, {dis.max():.3f}] ===")
+
+results = {}
+
+# --- step 1: pure Karplus ---
+print("\n--- Karplus ---")
+X = np.column_stack([ones, c, c*c])
+results["karplus"] = fit_lstsq(X, js)
+print_fit("karplus", ["a", "b", "g"], *results["karplus"])
+
+# --- step 2: Karplus + f(d) ---
+print("\n--- Karplus + f(d) ---")
+for name, func in DIST_FORMS.items():
+    fd = func(dists)
+    X  = np.column_stack([ones, c, c*c, fd])
+    results[f"karplus+{name}"] = fit_lstsq(X, js)
+    print_fit(f"karplus+{name}(d)", ["a", "b", "g", "d"],
+              *results[f"karplus+{name}"])
+
+# --- step 3: Karplus + DI ---
+print("\n--- Karplus + DI ---")
+X = np.column_stack([ones, c, c*c, dis])
+results["karplus+DI"] = fit_lstsq(X, js)
+print_fit("karplus+DI", ["a", "b", "g", "e"], *results["karplus+DI"])
+
+# --- step 4: Karplus + DI + f(d) ---
+print("\n--- Karplus + DI + f(d) ---")
+for name, func in DIST_FORMS.items():
+    fd = func(dists)
+    X  = np.column_stack([ones, c, c*c, dis, fd])
+    results[f"karplus+DI+{name}"] = fit_lstsq(X, js)
+    print_fit(f"karplus+DI+{name}(d)", ["a", "b", "g", "e", "d"],
+              *results[f"karplus+DI+{name}"])
+
+print("\n=== RMSE summary (Hz) ===")
+for key, (_, _, rmse) in results.items():
+    print(f"  {key:<26} {rmse:.4f}")
+
+# --- plotting ---
 xticks  = [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi]
 xlabels = ["0", r"$\sfrac\pi4$", r"$\sfrac\pi2$",
            r"$\sfrac{3\pi}4$", r"$\pi$"]
 
+best_d  = min(DIST_FORMS, key=lambda n: results[f"karplus+{n}"][2])
+best_ed = min(DIST_FORMS, key=lambda n: results[f"karplus+DI+{n}"][2])
+d_mean  = dists.mean()
+di_mean = dis.mean()
+
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, ax = plt.subplots(figsize=(9, 6))
-    tc = np.linspace(0, np.pi, 400)
-    for variant in VARIANTS:
-        if variant not in results or not variant.endswith("_FC"):
-            continue
-        r   = results[variant]
-        col = COLORS[variant]
-        best = min((n for n in DIST_FORMS if n != "none"),
-                   key=lambda n: r["fits"][n][2])
-        coeffs, _, rmse = r["fits"][best]
-        a, b, g, dlt = coeffs
-        fd_mean = DIST_FORMS[best](r["dists"].mean())
-        ax.scatter(r["thetas"], r["js"], alpha=0.3, s=10, color=col)
-        label = (fr"{variant.replace('_', ' ')} + {best}(d)  "
-                 fr"(RMSE {rmse:.2f} Hz)")
-        ax.plot(tc, a + b*np.cos(tc) + g*np.cos(tc)**2 + dlt*fd_mean,
-                color=col, linewidth=2, label=label)
+    tc   = np.linspace(0, np.pi, 400)
+    ctc  = np.cos(tc)
+    ctc2 = ctc*ctc
+
+    ax.scatter(thetas, js, alpha=0.25, s=10, color="tab:gray", label="data")
+
+    a, b, g = results["karplus"][0]
+    rmse    = results["karplus"][2]
+    ax.plot(tc, a + b*ctc + g*ctc2, color="tab:green", linewidth=2,
+            label=fr"Karplus (RMSE {rmse:.2f})")
+
+    a, b, g, dlt = results[f"karplus+{best_d}"][0]
+    rmse         = results[f"karplus+{best_d}"][2]
+    fd_m         = DIST_FORMS[best_d](d_mean)
+    ax.plot(tc, a + b*ctc + g*ctc2 + dlt*fd_m,
+            color="tab:blue", linewidth=2,
+            label=fr"Karplus + {best_d}(d) (RMSE {rmse:.2f})")
+
+    a, b, g, e = results["karplus+DI"][0]
+    rmse       = results["karplus+DI"][2]
+    ax.plot(tc, a + b*ctc + g*ctc2 + e*di_mean,
+            color="tab:orange", linewidth=2,
+            label=fr"Karplus + DI (RMSE {rmse:.2f})")
+
+    a, b, g, e, dlt = results[f"karplus+DI+{best_ed}"][0]
+    rmse            = results[f"karplus+DI+{best_ed}"][2]
+    fd_m            = DIST_FORMS[best_ed](d_mean)
+    ax.plot(tc, a + b*ctc + g*ctc2 + e*di_mean + dlt*fd_m,
+            color="tab:purple", linewidth=2,
+            label=fr"Karplus + DI + {best_ed}(d) (RMSE {rmse:.2f})")
+
     ax.set_xlabel(r"$\vert$H-C-C-H$\vert$ dihedral angle (rad)")
     ax.set_ylabel("J (Hz)")
-    ax.set_title(r"Karplus + distance fits (curve at $\bar d$)")
+    ax.set_title(r"Stepwise Karplus fits (curves at $\bar d$, $\overline{DI}$)")
     ax.set_xlim(0, np.pi)
     ax.set_xticks(xticks)
     ax.set_xticklabels(xlabels)
     ax.legend(loc="best", fontsize=9)
     style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/karplus_dist_combined{SUFFIX}.pdf", transparent=TRANSPARENT)
+    fig.savefig(f"{PLOT_DIR}/karplus_stages_{VARIANT}{SUFFIX}.pdf",
+                transparent=TRANSPARENT)
     plt.close(fig)
 

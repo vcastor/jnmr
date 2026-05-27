@@ -29,15 +29,11 @@ def read_molecule_from_rkf(rkf_path: str, frame: int = -1) -> 'Molecule':
     
     return mol
 
-
 def rkf_to_xyz(rkf_path: str, xyz_path: str, frame: int = -1) -> None:
     mol = read_molecule_from_rkf(rkf_path, frame)
     mol.write(xyz_path)
 
-
-# =========================================================================== #
-#                                      Main                                   #
-# =========================================================================== #
+# ── main ──────────────────────────────────────────────────────────────────
 init()
 
 config = {

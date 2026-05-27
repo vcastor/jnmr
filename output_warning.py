@@ -48,3 +48,4 @@ for var in config["variants"]:
 
 conn.commit()
 conn.close()
+

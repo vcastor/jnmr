@@ -1,226 +1,12 @@
 import os
-import sys
 import glob
 import sqlite3
 import numpy as np
 from itertools import groupby
 from typing import List, Tuple, Dict
+from hassan_functions import *
 
-def get_step_from_filename(filename: str) -> int:
-    basename = os.path.splitext(os.path.basename(filename))[0]
-    import re
-    match = re.search(r'(\d+)', basename)
-    if match:
-        return int(match.group(1))
-    return 0
-
-def get_canonical_atom_order(mol: 'Molecule', formula: str) -> List[int]:
-    """
-    Return atom indices in canonical order based on connectivity.
-    """
-    natoms = len(mol.atoms)
-    
-    if formula == 'Cl':
-        return [0]
-    
-    adj: Dict[int, List[int]] = {i: [] for i in range(natoms)}
-    for bond in mol.bonds:
-        i = mol.atoms.index(bond.atom1)
-        j = mol.atoms.index(bond.atom2)
-        adj[i].append(j)
-        adj[j].append(i)
-    
-    symbol_counts = {}
-    for at in mol.atoms:
-        symbol_counts[at.symbol] = symbol_counts.get(at.symbol, 0) + 1
-    
-    start_idx = 0
-    start_priority = (symbol_counts[mol.atoms[0].symbol], mol.atoms[0].symbol)
-    for i, at in enumerate(mol.atoms):
-        priority = (symbol_counts[at.symbol], at.symbol)
-        if priority < start_priority:
-            start_priority = priority
-            start_idx = i
-    
-    visited = [False] * natoms
-    order   = []
-    queue   = [start_idx]
-    visited[start_idx] = True
-    
-    while queue:
-        current = queue.pop(0)
-        order.append(current)
-        neighbors = adj[current]
-        unvisited = [n for n in neighbors if not visited[n]]
-        unvisited.sort(key=lambda n: (mol.atoms[n].symbol, len(adj[n])))
-        for n in unvisited:
-            if not visited[n]:
-                visited[n] = True
-                queue.append(n)
-    
-    return order
-
-
-def reorder_molecule_atoms(mol: 'Molecule') -> 'Molecule':
-    """
-    Create new molecule with atoms in canonical order
-    """
-    formula = mol.get_formula()
-    order   = get_canonical_atom_order(mol, formula)
-    
-    new_mol = Molecule()
-    new_mol.properties = mol.properties.copy()
-    
-    old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(order)}
-    
-    for old_idx in order:
-        at = mol.atoms[old_idx]
-        new_at = Atom(atnum=at.atnum, coords=at.coords)
-        new_at.properties = at.properties.copy()
-        new_mol.add_atom(new_at)
-    
-    for bond in mol.bonds:
-        i = mol.atoms.index(bond.atom1)
-        j = mol.atoms.index(bond.atom2)
-        new_mol.add_bond(new_mol.atoms[old_to_new[i]], new_mol.atoms[old_to_new[j]], bond.order)
-    
-    return new_mol
-
-
-def get_nh2_hydrogens(urea: 'Molecule') -> List[Tuple[int, int]]:
-    """
-    Return H atoms bonded to N in urea
-    (0-based)
-    Returns [(H_index, N_index), ...]
-    """
-    nh2_hydrogens = []
-    for i, at in enumerate(urea.atoms):
-        if at.symbol != 'N':
-            continue
-        for bond in at.bonds:
-            neighbor = bond.other_end(at)
-            if neighbor.symbol == 'H':
-                h_idx = urea.atoms.index(neighbor)
-                nh2_hydrogens.append((h_idx, i))
-    return nh2_hydrogens
-
-
-def get_ch3_hydrogens(choline: 'Molecule') -> Tuple[int, List[int]]:
-    """
-    Return N atom index and all 9 H atoms from CH3 groups
-    (0-based)
-    Returns {N_index: [H_indices]}
-    """
-    for i, at in enumerate(choline.atoms):
-        if at.symbol != 'N':
-            continue
-
-        h_indices = []
-        for bond in at.bonds:
-            c_atom = bond.other_end(at)
-            if c_atom.symbol != 'C':
-                continue
-            c_neighbors = [b.other_end(c_atom) for b in c_atom.bonds]
-            c_h_atoms   = [n for n in c_neighbors if n.symbol == 'H']
-            if len(c_h_atoms) == 3:
-                h_indices.extend([choline.atoms.index(h) for h in c_h_atoms])
-
-        if len(h_indices) == 9:
-            return i, h_indices
-
-    return -1, []
-
-
-def get_ch2_pairs(choline: 'Molecule') -> List[Tuple[List[int], List[int]]]:
-    """
-    Return pairs of H indices for adjacent CH2 groups in choline
-    """
-    ch2_carbons = []
-    for i, at in enumerate(choline.atoms):
-        if at.symbol != 'C':
-            continue
-        neighbors = [b.other_end(at) for b in at.bonds]
-        h_neighbors = [n for n in neighbors if n.symbol == 'H']
-        if len(h_neighbors) == 2:
-            h_indices = [choline.atoms.index(h) for h in h_neighbors]
-            ch2_carbons.append((at, h_indices))
-    
-    pairs = []
-    for idx1, (c1, h1) in enumerate(ch2_carbons):
-        c1_neighbors = [b.other_end(c1) for b in c1.bonds]
-        for idx2, (c2, h2) in enumerate(ch2_carbons):
-            if idx2 <= idx1:
-                continue
-            if c2 in c1_neighbors:
-                pairs.append((h1, h2))
-    return pairs
-
-
-def classify_sort_canonical(molecules: List['Molecule'],
-                            centre: np.ndarray) -> Tuple[List['Molecule'], dict, dict]:
-    """
-    Sort molecules by type and distance to centre, canonicalize atoms
-    """
-    urea, choline, chloride = [], [], []
-
-    for mol in molecules:
-        formula = mol.get_formula()
-        com     = np.array(mol.get_center_of_mass())
-        dist    = np.linalg.norm(com - centre)
-        canonical_mol = reorder_molecule_atoms(mol)
-        
-        if formula == 'CH4N2O':
-            urea.append((canonical_mol, dist))
-        elif formula == 'C5H14NO':
-            choline.append((canonical_mol, dist))
-        elif formula == 'Cl':
-            chloride.append((canonical_mol, dist))
-
-    urea.sort(key=lambda x: x[1])
-    choline.sort(key=lambda x: x[1])
-    chloride.sort(key=lambda x: x[1])
-
-    sorted_mols = [m for m, _ in urea + choline + chloride]
-    
-    counts = {
-        'urea':     len(urea),
-        'choline':  len(choline),
-        'chloride': len(chloride),
-    }
-    
-    mol_data = {
-        'urea':     [m for m, _ in urea],
-        'choline':  [m for m, _ in choline],
-        'chloride': [m for m, _ in chloride]
-    }
-    
-    return sorted_mols, counts, mol_data
-
-
-def compute_offsets(mol_data: dict) -> Tuple[List[int], List[int], List[int]]:
-    """Compute global atom offsets for each molecule."""
-    ureas     = mol_data['urea']
-    cholines  = mol_data['choline']
-    chlorides = mol_data['chloride']
-    
-    urea_offsets = []
-    offset = 0
-    for u in ureas:
-        urea_offsets.append(offset)
-        offset += len(u)
-    
-    choline_offsets = []
-    for c in cholines:
-        choline_offsets.append(offset)
-        offset += len(c)
-    
-    chloride_offsets = []
-    for cl in chlorides:
-        chloride_offsets.append(offset)
-        offset += len(cl)
-    
-    return urea_offsets, choline_offsets, chloride_offsets
-
+SPECIES = ['urea', 'choline', 'chloride']
 
 def intra_choline_interactions(
         mol_data: dict,
@@ -231,20 +17,17 @@ def intra_choline_interactions(
     """
     cholines = mol_data['choline']
     intra    = {}
-    
+
     for ci, choline in enumerate(cholines):
-        offset    = choline_offsets[ci]
-        ch2_pairs = get_ch2_pairs(choline)
-        
+        offset = choline_offsets[ci]
         interactions = []
-        for h1_list, h2_list in ch2_pairs:
+        for _, h1_list, _, h2_list in find_adjacent_xh_pairs(choline, 'C', 2, return_indices=True):
             for h1 in h1_list:
-                global_h1 = offset + h1 + 1
+                global_h1  = offset + h1 + 1
                 global_h2s = [offset + h2 + 1 for h2 in h2_list]
                 interactions.append((global_h1, global_h2s))
-        
         intra[ci] = interactions
-    
+
     return intra
 
 
@@ -266,19 +49,18 @@ def inter_nh2_ch3_interactions(
     ureas    = mol_data['urea']
     cholines = mol_data['choline']
 
-    # First pass: collect all H-H pairs grouped by (urea_idx, choline_idx)
-    # A "contact" is one NH2-(CH3)3 group
-    contacts: Dict[Tuple[int,int], List[Dict]] = {}
+    contacts: Dict[Tuple[int, int], List[Dict]] = {}
 
     for ui, urea in enumerate(ureas):
-        nh2_h_list = get_nh2_hydrogens(urea)
+        nh2_bonds = find_xh_bonds(urea, 'N', return_indices=True)
 
         for ci, choline in enumerate(cholines):
-            choline_n_idx, choline_h_indices = get_ch3_hydrogens(choline)
-            if choline_n_idx < 0:
+            ch3_groups = find_xh_groups(choline, 'C', 3, neighbour_symbol='N', return_indices=True)
+            if not ch3_groups:
                 continue
+            choline_h_indices = [h for _, hs in ch3_groups for h in hs]
 
-            for urea_h_idx, urea_n_idx in nh2_h_list:
+            for _, urea_h_idx in nh2_bonds:
                 urea_h_coord = np.array(urea.atoms[urea_h_idx].coords)
 
                 for ch3_h_idx in choline_h_indices:
@@ -300,10 +82,8 @@ def inter_nh2_ch3_interactions(
                         'distance':    dist,
                     })
 
-    # Second pass: for each contact, mark the closest H-H pair as main
     interactions = []
     for contact_id, ((ui, ci), rows) in enumerate(contacts.items()):
-        # Find the minimum distance in this contact
         min_dist = min(r['distance'] for r in rows)
         for r in rows:
             r['contact_id'] = contact_id
@@ -419,10 +199,8 @@ def add_snapshot_to_db(
     conn   = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Count inter interactions
     n_inter = len(inter_interactions)
 
-    # Insert into main snapshots table
     cursor.execute('''
         INSERT OR IGNORE INTO snapshots (n_step, n_choline, n_inter)
         VALUES (?, ?, ?)
@@ -474,7 +252,6 @@ def add_snapshot_to_db(
                 J_TZ2PJ_all REAL
             )
         ''')
-        # is_main is already computed per contact by inter_nh2_ch3_interactions
         for inter in inter_interactions:
             cursor.execute(f'''
                 INSERT INTO {inter_table}
@@ -512,14 +289,15 @@ def analyse_snapshot(input_xyz: str, distance_threshold: float = 5.0):
     centre  = np.mean(cluster.as_array(), axis=0)
 
     cluster.guess_bonds()
-    molecules = cluster.separate()
+    mol_data = classify_sort(cluster.separate(), centre,
+                             {k: FORMULAS[k] for k in SPECIES})
+    offs     = compute_offsets(mol_data, SPECIES)
+    sorted_mols = [m for name in SPECIES for m in mol_data[name]]
+    counts      = {name: len(mol_data[name]) for name in SPECIES}
 
-    sorted_mols, counts, mol_data = classify_sort_canonical(molecules, centre)
-    urea_offsets, choline_offsets, chloride_offsets = compute_offsets(mol_data)
-
-    intra = intra_choline_interactions(mol_data, choline_offsets)
-    inter = inter_nh2_ch3_interactions(mol_data, urea_offsets,
-                                       choline_offsets, distance_threshold)
+    intra = intra_choline_interactions(mol_data, offs['choline'])
+    inter = inter_nh2_ch3_interactions(mol_data, offs['urea'],
+                                       offs['choline'], distance_threshold)
 
     return sorted_mols, counts, intra, inter
 

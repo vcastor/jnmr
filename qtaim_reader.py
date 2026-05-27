@@ -4,13 +4,11 @@ import re
 import glob
 import sqlite3
 import numpy as np
+from hassan_functions.io import get_step_from_filename
 
 DB_PATH   = "nmr_jcoupling.db"
 QTAIM_DIR = "amsoutput/qtaim"
 HEADER    = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
-
-def get_step_from_filename(path):
-    return int(re.search(r"MDStep(\d+)_cluster", os.path.basename(path)).group(1))
 
 def read_di_matrix(path):
     """Read the DI matrix from a QTAIM .out file.

@@ -4,9 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 
-PLOT_DIR    = "plots"
-DB_PATH     = "nmr_jcoupling.db"
-PLOT_STYLES = [('black', False, ''), ('white', True, '_transparent')]
+from hassan_functions.db import table_exists, column_exists
+from hassan_functions.plotting import PLOT_STYLES, style_axes
+
+PLOT_DIR = "plots"
+DB_PATH  = "nmr_jcoupling.db"
 
 # (variant, label, color)
 VARIANTS = [
@@ -17,21 +19,10 @@ VARIANTS = [
 ]
 
 # experimental values
-EXP_INTRA     = 5.9
-EXP_INTRA_ERR = 0.24
-EXP_INTER     = 1.104
-EXP_INTER_ERR = 0.031
-
-def table_exists(cursor, table_name):
-    cursor.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-        (table_name,),
-    )
-    return cursor.fetchone() is not None
-
-def column_exists(cursor, table_name, column_name):
-    cursor.execute(f"PRAGMA table_info({table_name})")
-    return any(row[1] == column_name for row in cursor.fetchall())
+EXP_INTRA     = 5.94
+EXP_INTRA_ERR = 4.26
+EXP_INTER     = 1.32
+EXP_INTER_ERR = 0.82
 
 def get_processed_steps(cursor, basis_cont):
     if not table_exists(cursor, "snapshots"):
@@ -99,21 +90,6 @@ def print_stats(j_values, label):
     print(f"  Min:        {np.min(j_values):.4f} Hz")
     print(f"  Max:        {np.max(j_values):.4f} Hz")
 
-def style_axes(ax):
-    ax.set_facecolor("none")
-    for spine in ax.spines.values():
-        spine.set_color(LETTER_COLOUR)
-    ax.tick_params(colors=LETTER_COLOUR, which="both")
-    ax.xaxis.label.set_color(LETTER_COLOUR)
-    ax.yaxis.label.set_color(LETTER_COLOUR)
-    ax.title.set_color(LETTER_COLOUR)
-    leg = ax.get_legend()
-    if leg is not None:
-        leg.get_frame().set_facecolor("none")
-        leg.get_frame().set_edgecolor(LETTER_COLOUR)
-        for t in leg.get_texts():
-            t.set_color(LETTER_COLOUR)
-
 def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
     """variant_data: list of (label, j_values, color)."""
     finite = [v for _, v, _ in variant_data if v.size > 0]
@@ -132,25 +108,39 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
         disp = cubic_dispersion(vals)
         leg  = f"{label}  ⟨J⟩={mean:.2f}±{disp:.2f} Hz"
         kde  = gaussian_kde(vals, bw_method=0.3)
-        y    = kde(x)
-        kde = gaussian_kde(vals, bw_method=0.3)
         ax.plot(x, kde(x), color=color, linewidth=2.5, label=leg)
         ax.axvline(mean, color=color, linestyle=":", linewidth=1.5, alpha=0.8)
     if exp_mean is not None:
         exp_label = (r"J$_\mathrm{exp}$"+f" = {exp_mean}±{exp_std} Hz" if exp_std is not None
-                     else f"Exp = {exp_mean} Hz")
+                     else f"J$_\mathrm{exp}$ = {exp_mean} Hz")
         ax.axvline(exp_mean, color=LETTER_COLOUR, ls="--", linewidth=1.8, label=exp_label)
         if exp_std is not None:
-            ax.axvspan(exp_mean - exp_std, exp_mean + exp_std,
-                       color=LETTER_COLOUR, alpha=0.12)
+            ax.axvspan(exp_mean-exp_std, exp_mean+exp_std,
+                       color=LETTER_COLOUR, alpha=0.12, zorder=0)
     ax.set_xlabel("J coupling (Hz)")
     ax.set_ylabel("Relative frequency")
     ax.set_title(title)
     ax.set_xlim(0, xmax)
-    ax.legend()
-    style_axes(ax)
+
+    # style first, then build legend so nothing overrides our frame settings
+    style_axes(ax, LETTER_COLOUR)
+
+    if TRANSPARENT:
+        leg = ax.legend(loc="upper right", frameon=False)
+        leg.get_frame().set_facecolor("none")
+        leg.get_frame().set_edgecolor("none")
+        leg.get_frame().set_alpha(0)
+    else:
+        leg = ax.legend(loc="upper right", frameon=True)
+        frame = leg.get_frame()
+        frame.set_facecolor((1.0, 1.0, 1.0, 1.0))
+        frame.set_edgecolor(LETTER_COLOUR)
+        frame.set_alpha(1.0)
+        frame.set_linewidth(1.0)
+    leg.set_zorder(20)
+
     fig.tight_layout()
-    fig.savefig(PLOT_DIR+"/"+output, dpi=150, transparent=TRANSPARENT)
+    fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
 def plot_j_vs_distance(j_values, distances, output):
@@ -161,9 +151,9 @@ def plot_j_vs_distance(j_values, distances, output):
     ax.set_xlabel("H-H distance (A)")
     ax.set_ylabel("J coupling (Hz)")
     ax.set_title("Inter-molecular J coupling vs distance")
-    style_axes(ax)
+    style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()
-    fig.savefig(PLOT_DIR+output, dpi=150, transparent=TRANSPARENT)
+    fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
 # ============================== #
@@ -212,7 +202,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 # ax.set_title("Sensitivity of effective J to power mean exponent")
 # ax.axhline(EXP_INTER, color=LETTER_COLOUR, ls="--",
 #            label=f"Exp = {EXP_INTER}±{EXP_INTER_ERR} Hz")
-# ax.axhspan(EXP_INTER - EXP_INTER_ERR, EXP_INTER + EXP_INTER_ERR,
+# ax.axhspan(EXP_INTER-EXP_INTER_ERR, EXP_INTER+EXP_INTER_ERR,
 #            color=LETTER_COLOUR, alpha=0.12)
 # ax.legend()
 # style_axes(ax)

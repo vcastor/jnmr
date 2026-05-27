@@ -3,22 +3,13 @@ import os
 import sqlite3
 import subprocess
 from typing import Optional, List, Tuple
+from hassan_functions.db import table_exists
 
 VARIANTS = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
-
 
 def get_pending_steps(cursor) -> List[int]:
     cursor.execute("SELECT n_step FROM snapshots WHERE comment IS NULL")
     return [row[0] for row in cursor.fetchall()]
-
-
-def table_exists(cursor, table_name: str) -> bool:
-    """Check if a table exists in the database."""
-    cursor.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,))
-    return cursor.fetchone()[0] > 0
-
 
 def check_jcolumn_filled(cursor, table_name: str, j_col: str) -> bool:
     """Check if a specific J column is fully filled in a table."""
@@ -29,7 +20,6 @@ def check_jcolumn_filled(cursor, table_name: str, j_col: str) -> bool:
     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
     total = cursor.fetchone()[0]
     return filled == total and total > 0
-
 
 def find_j_value(filepath: str, atom1: int, atom2: int) -> Optional[float]:
     """
@@ -60,13 +50,11 @@ def find_j_value(filepath: str, atom1: int, atom2: int) -> Optional[float]:
 
     return None
 
-
 def get_null_pairs(cursor, table_name: str, j_col: str) -> List[Tuple[int, int, int]]:
     """Get (id, H_pert, H_resp) pairs where the given J column is NULL."""
     cursor.execute(
         f"SELECT id, H_pert, H_resp FROM {table_name} WHERE {j_col} IS NULL")
     return cursor.fetchall()
-
 
 def update_j_value(cursor, table_name: str, j_col: str,
                    row_id: int, j_value: float) -> None:
@@ -74,7 +62,6 @@ def update_j_value(cursor, table_name: str, j_col: str,
     cursor.execute(
         f"UPDATE {table_name} SET {j_col} = ? WHERE id = ?",
         (j_value, row_id))
-
 
 def process_output_file(cursor, n_step: int, variant: str, filepath: str):
     """
@@ -93,9 +80,7 @@ def process_output_file(cursor, n_step: int, variant: str, filepath: str):
             if j_value is not None:
                 update_j_value(cursor, table_name, j_col, row_id, j_value)
 
-# ============================== #
-#             Main
-# ============================== #
+# ── main ──────────────────────────────────────────────────────────────────
 
 config = {
     "db_path": "nmr_jcoupling.db",
@@ -116,9 +101,9 @@ for n_step in pending_steps:
     filename = f"MDStep{n_step}_cluster.out"
 
     for var in config["variants"]:
-        variant    = var["name"]
-        filepath   = os.path.join(var["output_dir"], filename)
-        j_col      = f"J_{variant}"
+        variant  = var["name"]
+        filepath = os.path.join(var["output_dir"], filename)
+        j_col    = f"J_{variant}"
 
         if not os.path.exists(filepath):
             continue
@@ -133,3 +118,4 @@ for n_step in pending_steps:
         conn.commit()
 
 conn.close()
+

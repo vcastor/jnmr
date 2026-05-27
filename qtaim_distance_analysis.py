@@ -4,43 +4,13 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
+from hassan_functions.geometry import distance
+from hassan_functions.finders import find_xh_groups, find_adjacent_xh_pair_anchored
+from hassan_functions.constants import FORMULAS
+
 CLUSTERS_DIR = "clusters"
 QTAIM_DIR    = "amsoutput/qtaim"
 BP_HEADER    = "BOND PATHS (BP) AND PROPERTIES ALONG THEM ARE WRITTEN TO TAPE21"
-
-def find_ch3_groups(choline):
-    out = []
-    for n in choline.atoms:
-        if n.symbol != 'N':
-            continue
-        for b in n.bonds:
-            c = b.other_end(n)
-            if c.symbol != 'C':
-                continue
-            hs = [b2.other_end(c) for b2 in c.bonds if b2.other_end(c).symbol == 'H']
-            if len(hs) == 3:
-                out.append((c, hs))
-    return out
-
-def find_ch2_pair(choline):
-    ch2 = []
-    for at in choline.atoms:
-        if at.symbol != 'C':
-            continue
-        hs = [b.other_end(at) for b in at.bonds if b.other_end(at).symbol == 'H']
-        if len(hs) == 2:
-            ch2.append((at, hs))
-    for i, (c1, h1) in enumerate(ch2):
-        nbrs1 = [b.other_end(c1) for b in c1.bonds]
-        for j, (c2, h2) in enumerate(ch2):
-            if j <= i or c2 not in nbrs1:
-                continue
-            if any(a.symbol == 'N' for a in nbrs1):
-                return c1, h1, c2, h2
-            return c2, h2, c1, h1
-
-def D(a, b):
-    return float(np.linalg.norm(np.array(a.coords) - np.array(b.coords)))
 
 def read_bcps(path):
     """Return {frozenset({atomA, atomB}): rho} from QTAIM output."""
@@ -103,8 +73,8 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         at.cluster_id = i + 1
     mols = cluster.separate()
 
-    ureas    = [m for m in mols if m.get_formula() == 'CH4N2O']
-    cholines = [m for m in mols if m.get_formula() == 'C5H14NO']
+    ureas    = [m for m in mols if m.get_formula() == FORMULAS['urea']]
+    cholines = [m for m in mols if m.get_formula() == FORMULAS['choline']]
     bcps     = read_bcps(qpath)
 
     for u in ureas:
@@ -115,16 +85,16 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
             nh2_hit = False
             for n in n_urea:
-                for _, hs in find_ch3_groups(ch):
+                for _, hs in find_xh_groups(ch, 'C', 3, neighbour_symbol='N'):
                     for h in hs:
                         rho = bcp_rho(bcps, n, h)
                         if rho is not None:
-                            nh2_ch3.append((D(n, h), rho))
+                            nh2_ch3.append((distance(n, h), rho))
                             nh2_hit = True
             if nh2_hit:
                 n_pairs_nh2_ch3 += 1
 
-            _, hN, _, hO = find_ch2_pair(ch)
+            _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
             hits_N = [(h, bcp_rho(bcps, o_urea, h)) for h in hN]
             hits_N = [(h, r) for h, r in hits_N if r is not None]
             hits_O = [(h, bcp_rho(bcps, o_urea, h)) for h in hO]
@@ -134,15 +104,15 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                 continue
             n_pairs_o_any += 1
             for h, r in hits:
-                o_hch2_all.append((D(o_urea, h), r))
+                o_hch2_all.append((distance(o_urea, h), r))
             if hits_N and hits_O:
                 n_pairs_o_bridge += 1
                 for h, r in hits:
-                    o_hch2_bridge.append((D(o_urea, h), r))
+                    o_hch2_bridge.append((distance(o_urea, h), r))
             elif len(hits) == 1:
                 n_pairs_o_single += 1
                 h, r = hits[0]
-                o_hch2_single.append((D(o_urea, h), r))
+                o_hch2_single.append((distance(o_urea, h), r))
             else:
                 n_pairs_o_same_ch2 += 1
 
@@ -219,4 +189,3 @@ axes[1, 2].legend()
 
 fig.tight_layout()
 plt.show()
-
