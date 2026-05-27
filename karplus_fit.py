@@ -22,6 +22,17 @@ DIST_FORMS = {
     "sqrt":      lambda d: np.sqrt(d),
 }
 
+DI_FORMS = {
+    "linear":    lambda x: x,
+    "quadratic": lambda x: x*x,
+    "cubic":     lambda x: x*x*x,
+    "inverse":   lambda x: 1/x,
+    "sqrt":      lambda x: np.sqrt(x),
+    "exp":       lambda x: np.exp(x),
+    "log":       lambda x: np.log(x),
+}
+
+
 def fit_lstsq(X, y):
     coeffs, *_ = np.linalg.lstsq(X, y, rcond=None)
     resid  = y - X@coeffs
@@ -31,10 +42,12 @@ def fit_lstsq(X, y):
     rmse   = np.sqrt(np.mean(resid**2))
     return coeffs, errs, rmse
 
+
 def print_fit(label, names, coeffs, errs, rmse):
     parts = "  ".join(f"{n}={v:+.4f}±{e:.4f}"
                       for n, v, e in zip(names, coeffs, errs))
-    print(f"  [{label:<26}] {parts}  RMSE={rmse:.4f} Hz")
+    print(f"  [{label:<34}] {parts}  RMSE={rmse:.4f} Hz")
+
 
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -78,6 +91,25 @@ print(f"=== {VARIANT}: n = {thetas.size}, "
       f"d in [{dists.min():.3f}, {dists.max():.3f}], "
       f"DI in [{dis.min():.3f}, {dis.max():.3f}] ===")
 
+# precompute transformed features, skip forms producing non-finite values
+def transform_feats(forms, x):
+    out, skipped = {}, []
+    for n, f in forms.items():
+        with np.errstate(invalid="ignore", divide="ignore"):
+            v = f(x)
+        if np.all(np.isfinite(v)):
+            out[n] = v
+        else:
+            skipped.append(n)
+    return out, skipped
+
+dist_feats, dist_skipped = transform_feats(DIST_FORMS, dists)
+di_feats,   di_skipped   = transform_feats(DI_FORMS,   dis)
+if dist_skipped:
+    print(f"  skipped dist forms (non-finite): {dist_skipped}")
+if di_skipped:
+    print(f"  skipped DI forms (non-finite): {di_skipped}")
+
 results = {}
 
 # --- step 1: pure Karplus ---
@@ -87,42 +119,53 @@ results["karplus"] = fit_lstsq(X, js)
 print_fit("karplus", ["a", "b", "g"], *results["karplus"])
 
 # --- step 2: Karplus + f(d) ---
-print("\n--- Karplus + f(d) ---")
-for name, func in DIST_FORMS.items():
-    fd = func(dists)
-    X  = np.column_stack([ones, c, c*c, fd])
-    results[f"karplus+{name}"] = fit_lstsq(X, js)
-    print_fit(f"karplus+{name}(d)", ["a", "b", "g", "d"],
-              *results[f"karplus+{name}"])
+for dn, fd in dist_feats.items():
+    X = np.column_stack([ones, c, c*c, fd])
+    results[f"karplus+{dn}(d)"] = fit_lstsq(X, js)
+best_d_key = min((k for k in results if k.endswith("(d)") and "DI" not in k),
+                 key=lambda k: results[k][2])
+print(f"\n--- Karplus + f(d): best of {len(dist_feats)} ---")
+print_fit(best_d_key, ["a", "b", "g", "d"], *results[best_d_key])
 
-# --- step 3: Karplus + DI ---
-print("\n--- Karplus + DI ---")
-X = np.column_stack([ones, c, c*c, dis])
-results["karplus+DI"] = fit_lstsq(X, js)
-print_fit("karplus+DI", ["a", "b", "g", "e"], *results["karplus+DI"])
+# --- step 3: Karplus + g(DI) ---
+for en, gdi in di_feats.items():
+    X = np.column_stack([ones, c, c*c, gdi])
+    results[f"karplus+{en}(DI)"] = fit_lstsq(X, js)
+best_di_key = min((k for k in results if k.endswith("(DI)")),
+                  key=lambda k: results[k][2])
+print(f"\n--- Karplus + g(DI): best of {len(di_feats)} ---")
+print_fit(best_di_key, ["a", "b", "g", "e"], *results[best_di_key])
 
-# --- step 4: Karplus + DI + f(d) ---
-print("\n--- Karplus + DI + f(d) ---")
-for name, func in DIST_FORMS.items():
-    fd = func(dists)
-    X  = np.column_stack([ones, c, c*c, dis, fd])
-    results[f"karplus+DI+{name}"] = fit_lstsq(X, js)
-    print_fit(f"karplus+DI+{name}(d)", ["a", "b", "g", "e", "d"],
-              *results[f"karplus+DI+{name}"])
+# --- step 4: Karplus + g(DI) + f(d) ---
+for en, gdi in di_feats.items():
+    for dn, fd in dist_feats.items():
+        X = np.column_stack([ones, c, c*c, gdi, fd])
+        results[f"karplus+{en}(DI)+{dn}(d)"] = fit_lstsq(X, js)
+best_combo_key = min((k for k in results if "(DI)+" in k),
+                     key=lambda k: results[k][2])
+n_combos = len(di_feats)*len(dist_feats)
+print(f"\n--- Karplus + g(DI) + f(d): best of {n_combos} ---")
+print_fit(best_combo_key, ["a", "b", "g", "e", "d"], *results[best_combo_key])
 
-print("\n=== RMSE summary (Hz) ===")
-for key, (_, _, rmse) in results.items():
-    print(f"  {key:<26} {rmse:.4f}")
+# --- summary ---
+print("\n=== All RMSE sorted (Hz) ===")
+for key in sorted(results, key=lambda k: results[k][2]):
+    print(f"  {key:<34} {results[key][2]:.4f}")
 
 # --- plotting ---
 xticks  = [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi]
 xlabels = ["0", r"$\sfrac\pi4$", r"$\sfrac\pi2$",
            r"$\sfrac{3\pi}4$", r"$\pi$"]
 
-best_d  = min(DIST_FORMS, key=lambda n: results[f"karplus+{n}"][2])
-best_ed = min(DIST_FORMS, key=lambda n: results[f"karplus+DI+{n}"][2])
 d_mean  = dists.mean()
 di_mean = dis.mean()
+
+
+def parse_form(key, marker):
+    # extract "<form>" from "...+<form>(<marker>)..."
+    seg = key.split(f"({marker})")[0]
+    return seg.split("+")[-1]
+
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, ax = plt.subplots(figsize=(9, 6))
@@ -137,25 +180,31 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     ax.plot(tc, a + b*ctc + g*ctc2, color="tab:green", linewidth=2,
             label=fr"Karplus (RMSE {rmse:.2f})")
 
-    a, b, g, dlt = results[f"karplus+{best_d}"][0]
-    rmse         = results[f"karplus+{best_d}"][2]
+    best_d       = parse_form(best_d_key, "d")
+    a, b, g, dlt = results[best_d_key][0]
+    rmse         = results[best_d_key][2]
     fd_m         = DIST_FORMS[best_d](d_mean)
     ax.plot(tc, a + b*ctc + g*ctc2 + dlt*fd_m,
             color="tab:blue", linewidth=2,
             label=fr"Karplus + {best_d}(d) (RMSE {rmse:.2f})")
 
-    a, b, g, e = results["karplus+DI"][0]
-    rmse       = results["karplus+DI"][2]
-    ax.plot(tc, a + b*ctc + g*ctc2 + e*di_mean,
+    best_di    = parse_form(best_di_key, "DI")
+    a, b, g, e = results[best_di_key][0]
+    rmse       = results[best_di_key][2]
+    gdi_m      = DI_FORMS[best_di](di_mean)
+    ax.plot(tc, a + b*ctc + g*ctc2 + e*gdi_m,
             color="tab:orange", linewidth=2,
-            label=fr"Karplus + DI (RMSE {rmse:.2f})")
+            label=fr"Karplus + {best_di}(DI) (RMSE {rmse:.2f})")
 
-    a, b, g, e, dlt = results[f"karplus+DI+{best_ed}"][0]
-    rmse            = results[f"karplus+DI+{best_ed}"][2]
-    fd_m            = DIST_FORMS[best_ed](d_mean)
-    ax.plot(tc, a + b*ctc + g*ctc2 + e*di_mean + dlt*fd_m,
+    bc_di           = parse_form(best_combo_key, "DI")
+    bc_d            = parse_form(best_combo_key.split("+")[-1], "d")
+    a, b, g, e, dlt = results[best_combo_key][0]
+    rmse            = results[best_combo_key][2]
+    gdi_m           = DI_FORMS[bc_di](di_mean)
+    fd_m            = DIST_FORMS[bc_d](d_mean)
+    ax.plot(tc, a + b*ctc + g*ctc2 + e*gdi_m + dlt*fd_m,
             color="tab:purple", linewidth=2,
-            label=fr"Karplus + DI + {best_ed}(d) (RMSE {rmse:.2f})")
+            label=fr"Karplus + {bc_di}(DI) + {bc_d}(d) (RMSE {rmse:.2f})")
 
     ax.set_xlabel(r"$\vert$H-C-C-H$\vert$ dihedral angle (rad)")
     ax.set_ylabel("J (Hz)")

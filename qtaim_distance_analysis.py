@@ -3,7 +3,6 @@ import os
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-
 from hassan_functions.geometry import distance
 from hassan_functions.finders import find_xh_groups, find_adjacent_xh_pair_anchored
 from hassan_functions.constants import FORMULAS
@@ -36,7 +35,11 @@ def read_bcps(path):
         cp_num = int(s.split()[2])
         if cp_num not in pair_by_cp:
             continue
-        bcps[pair_by_cp[cp_num]] = float(lines[i + 24].split()[2])
+        # bcps[pair_by_cp[cp_num]] = float(lines[i + 24].split()[2])
+        # bcps[pair_by_cp[cp_num]] = float(lines[i + 46].split()[2])
+        gb = float(lines[i + 45].split()[2])
+        vb = float(lines[i + 46].split()[2])
+        bcps[pair_by_cp[cp_num]] = np.abs(vb)/gb if gb != 0 else 0.0
     return bcps
 
 def bcp_rho(bcps, a, b):

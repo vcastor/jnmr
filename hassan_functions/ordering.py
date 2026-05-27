@@ -1,5 +1,5 @@
 import numpy as np
-from scm.plams import Molecule, Atom
+# from scm.plams import Molecule, Atom
 
 def canonical_order(mol):
     """BFS atom indices in a deterministic order driven by connectivity."""

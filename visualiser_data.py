@@ -19,10 +19,10 @@ VARIANTS = [
 ]
 
 # experimental values
-EXP_INTRA     = 5.94
-EXP_INTRA_ERR = 4.26
-EXP_INTER     = 1.32
-EXP_INTER_ERR = 0.82
+EXP_INTRA     = 5.90
+EXP_INTRA_ERR = 0.24
+EXP_INTER     = 1.104
+EXP_INTER_ERR = 0.031
 
 def get_processed_steps(cursor, basis_cont):
     if not table_exists(cursor, "snapshots"):

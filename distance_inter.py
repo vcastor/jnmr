@@ -11,7 +11,7 @@ from hassan_functions.constants import FORMULAS
 PLOT_DIR     = "plots"
 CLUSTERS_DIR = "clusters"
 THR_NH2_CH3  = 4.0    # H(NH2)-H(CH3) cutoff
-THR_UREA_CH2 = 3.0    # O(urea)-H(CH2) cutoff
+THR_UREA_CH2 = 4.0    # O(urea)-H(CH2) cutoff
 
 plt.rcParams['text.usetex'] = True
 plt.rcParams['text.latex.preamble'] = r'\usepackage{xfrac}\usepackage{amsmath}'

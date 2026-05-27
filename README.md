@@ -1,15 +1,14 @@
 # DES NMR J-coupling pipeline
 
-Snapshots from a Molecular Dynamics (MD) simulation of a urea / choline
-chloride Deep Eutectic Solvent are post-processed into small clusters and
-fed to single-point DFT calculations to compute proton NMR J-couplings.
-Geometric and topological analyses (distances, dihedrals, QTAIM BCPs,
-delocalisation indices) are stored alongside the J values in a SQLite DB
-and plotted from there.
+Snapshots from a Molecular Dynamics simulation of a urea / choline chloride
+Deep Eutectic Solvent are post-processed into small clusters and fed to
+single-point DFT calculations to compute NMR J-couplings.  Geometric and
+qunatum analyses are stored alongside the J values in a SQLite DB and plotted
+from there.
 
 ## Requirements
 
-- AMS / ADF with PLAMS (`$AMSBIN/plams`)
+- AMS with PLAMS (`$AMSBIN/plams`)
 - Python 3 with: `numpy`, `matplotlib`, `seaborn`, `scipy`, `scikit-learn`,
   `sqlite3` (stdlib)
 - A LaTeX install for the publication-quality plots
@@ -18,31 +17,30 @@ and plotted from there.
 ## Directory layout
 
 ```
-mdStepsrkf/                   # raw MD checkpoints (.rkf), input
-mdStepsxyz/                   # xyz dump per MD step
-clusters/                     # inner-sphere clusters per step
-amsoutput/<variant>/          # ADF NMR output, one dir per basis/variant
-amsoutput/qtaim/              # ADF QTAIM output
-run_scripts/<variant>/        # generated .run / .sl scripts
-plots/                        # output figures
-nmr_jcoupling.db              # SQLite database (see init_db.py for schema)
-hassan_functions/             # shared library, see below
+mdStepsrkf/             # raw MD checkpoints (.rkf), input
+mdStepsxyz/             # xyz dump per MD step
+clusters/               # inner-sphere clusters per step
+amsoutput/<variant>/    # ADF NMR output, one dir per basis/variant
+amsoutput/qtaim/        # ADF QTAIM output
+run_scripts/<variant>/  # generated .run / .sl scripts
+plots/                  # output figures
+nmr_jcoupling.db        # SQLite database (see init_db.py for schema)
+hassan_functions/       # shared library, see below
 ```
 
 ## Pipeline order
 
 ```
-rkf_to_xyz.py        # rkf -> xyz dump (mdStepsrkf -> mdStepsxyz)
-region_selector.py   # carve inner-sphere clusters at the target ratio
-init_db.py           # one-shot DB schema setup
-run_generator.py     # classify cluster, write ADF .run files, seed DB rows
-                     # (submit on cluster: run_criann.sh)
-output_warning.py    # mark SCF-not-converged steps in the DB
-output_reader.py     # parse ADF output, fill J columns
-populate_intra_dihedral.py
-                     # backfill intra dihedral / distance columns
-qtaim_generator.py   # write QTAIM .run files for the converged steps
-qtaim_reader.py      # read DI matrices into the DB
+rkf_to_xyz.py           # rkf -> xyz dump (mdStepsrkf -> mdStepsxyz)
+region_selector.py      # carve inner-sphere clusters at the target ratio
+init_db.py              # one-shot DB schema setup
+run_generator.py        # classify cluster, write ADF .run files, seed DB rows
+                        # (submit on cluster: run_criann.sh)
+output_warning.py       # mark SCF-not-converged steps in the DB
+output_reader.py        # parse ADF output, fill J columns
+populate_intra_dihedral.py  # backfill intra dihedral / distance columns
+qtaim_generator.py      # write QTAIM .run files for the converged steps
+qtaim_reader.py         # read DI matrices into the DB
 ```
 
 Analysis (run after the data is in):
