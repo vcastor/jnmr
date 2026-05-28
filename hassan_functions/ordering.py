@@ -1,5 +1,4 @@
 import numpy as np
-# from scm.plams import Molecule, Atom
 
 def canonical_order(mol):
     """BFS atom indices in a deterministic order driven by connectivity."""
@@ -37,6 +36,7 @@ def canonical_order(mol):
 
 def reorder(mol):
     """Return a copy of mol with atoms in canonical_order(mol)."""
+    from scm.plams import Molecule, Atom
     order = canonical_order(mol)
     new = Molecule()
     new.properties = mol.properties.copy()
