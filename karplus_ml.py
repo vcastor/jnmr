@@ -1,8 +1,8 @@
 #!/usr/bin/python3
+import os
 import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
-
 from sklearn.ensemble        import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.svm             import SVR
 from sklearn.kernel_ridge    import KernelRidge
@@ -10,20 +10,33 @@ from sklearn.gaussian_process         import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.preprocessing   import StandardScaler
 from sklearn.pipeline        import Pipeline
-from sklearn.model_selection import KFold, cross_val_score
-
+from sklearn.model_selection import RepeatedKFold, KFold, cross_validate, cross_val_predict
 from hassan_functions.db       import column_exists
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
 plt.rcParams["text.usetex"]         = True
 plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
 
-PLOT_DIR = "plots"
-DB_PATH  = "nmr_jcoupling.db"
-VARIANT  = "TZ2P_FC"
-J_COL    = f"J_{VARIANT}"
-RNG      = 42
-N_SPLITS = 5
+PLOT_DIR  = "plots"
+DB_PATH   = "nmr_jcoupling.db"
+VARIANT   = "TZ2P_FC"
+J_COL     = f"J_{VARIANT}"
+RNG       = 42
+N_SPLITS  = 5
+N_REPEATS = 5                            # >=5 splits total: N_SPLITS*N_REPEATS
+N_JOBS    = os.cpu_count() - 10          # leave 10 cores (+RAM headroom) free
+
+# feature sets to compare. add a new descriptor by writing its DB column name
+# into any config below; DESCRIPTORS and the loader pick it up automatically,
+# and rows where it is NULL are dropped only for the configs that use it.
+CONFIGS = {
+    "phi":     ["dihedral"],
+    "geom":    ["dihedral", "angle_hcc", "angle_cch", "distance"],
+    "geom_DI": ["dihedral", "angle_hcc", "angle_cch", "distance", "DI"],
+    "phi_DI":  ["dihedral", "DI"],
+    "DI":      ["DI"],
+}
+DESCRIPTORS = sorted({c for cols in CONFIGS.values() for c in cols})
 
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -31,47 +44,41 @@ cursor = conn.cursor()
 cursor.execute(f"SELECT n_step FROM snapshots WHERE comment_{VARIANT} IS NULL")
 steps = sorted(r[0] for r in cursor.fetchall())
 
-thetas, dists, dis, js = [], [], [], []
+data = {c: [] for c in DESCRIPTORS}
+js   = []
 for n_step in steps:
     t = f"step_{n_step}_intra"
     cursor.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
         (t,),
     )
-    if cursor.fetchone() is None:                 continue
-    if not column_exists(cursor, t, "dihedral"):  continue
-    if not column_exists(cursor, t, "distance"):  continue
-    if not column_exists(cursor, t, "DI"):        continue
-    if not column_exists(cursor, t, J_COL):       continue
-    cursor.execute(
-        f"SELECT dihedral, distance, DI, {J_COL} FROM {t} "
-        f"WHERE dihedral IS NOT NULL AND distance IS NOT NULL "
-        f"AND DI IS NOT NULL AND {J_COL} IS NOT NULL"
-    )
-    for theta, d, di, j in cursor.fetchall():
-        thetas.append(theta)
-        dists.append(d)
-        dis.append(di)
-        js.append(j)
+    if cursor.fetchone() is None:            continue
+    if not column_exists(cursor, t, J_COL):  continue
+    present = [c for c in DESCRIPTORS if column_exists(cursor, t, c)]
+    cursor.execute(f"SELECT {', '.join(present + [J_COL])} FROM {t} WHERE {J_COL} IS NOT NULL")
+    for row in cursor.fetchall():
+        vals = dict(zip(present, row))
+        for c in DESCRIPTORS:
+            data[c].append(vals.get(c))
+        js.append(row[-1])
 
 conn.close()
 
-thetas = np.asarray(thetas, dtype=float)
-dists  = np.asarray(dists,  dtype=float)
-dis    = np.asarray(dis,    dtype=float)
-js     = np.abs(np.asarray(js, dtype=float))
+data = {c: np.array(v, dtype=float) for c, v in data.items()}   # None -> nan
+y    = np.abs(np.asarray(js, dtype=float))
 
-X = np.column_stack([thetas, dists, dis])
-y = js
-
-print(f"=== {VARIANT}: n = {y.size}, features: [phi, distance, DI] ===")
+datasets = {}
+for cfg_name, cols in CONFIGS.items():
+    M    = np.column_stack([data[c] for c in cols])
+    mask = ~np.isnan(M).any(axis=1)
+    datasets[cfg_name] = (M[mask], y[mask])
 
 kernel = (ConstantKernel(1.0, (1e-3, 1e3))
           *RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
           + WhiteKernel(noise_level=1.0, noise_level_bounds=(1e-3, 1e2)))
 
 models = {
-    "RF":  RandomForestRegressor(n_estimators=500, random_state=RNG, n_jobs=-1),
+    "RF":  RandomForestRegressor(n_estimators=500, random_state=RNG, n_jobs=1),
     "GBR": GradientBoostingRegressor(n_estimators=500, learning_rate=0.05,
                                      max_depth=4, random_state=RNG),
     "SVR": Pipeline([
@@ -91,47 +98,55 @@ models = {
     ]),
 }
 
-kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
+cv      = RepeatedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=RNG)
+cv_pred = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
 
-print(f"\n=== {N_SPLITS}-fold CV RMSE (Hz) ===")
-cv_rmse = {}
-for name, model in models.items():
-    neg_mse = cross_val_score(model, X, y, cv=kf,
-                              scoring="neg_mean_squared_error", n_jobs=-1)
-    rmse    = np.sqrt(-neg_mse)
-    cv_rmse[name] = rmse
-    print(f"  {name:<10}  {rmse.mean():.4f} ± {rmse.std():.4f}")
+mae_mean = {}
+for cfg_name, (X, yc) in datasets.items():
+    print(f"\n=== {VARIANT} / {cfg_name}: n = {yc.size}, features: {CONFIGS[cfg_name]} ===")
+    print(f"{'model':<10}{'MAE':>10}{'±std':>9}{'min':>9}{'max':>9}{'RMSE':>10}")
+    mae_mean[cfg_name] = {}
+    for name, model in models.items():
+        sc = cross_validate(model, X, yc, cv=cv,
+                            scoring=("neg_mean_absolute_error",
+                                     "neg_root_mean_squared_error"),
+                            n_jobs=N_JOBS)
+        mae  = -sc["test_neg_mean_absolute_error"]
+        rmse = -sc["test_neg_root_mean_squared_error"]
+        mae_mean[cfg_name][name] = mae.mean()
+        print(f"{name:<10}{mae.mean():>10.4f}{mae.std():>9.4f}"
+              f"{mae.min():>9.4f}{mae.max():>9.4f}{rmse.mean():>10.4f}")
 
-predictions = {}
-for name, model in models.items():
-    model.fit(X, y)
-    predictions[name] = model.predict(X)
+best = min(((c, m, v) for c, mm in mae_mean.items() for m, v in mm.items()),
+           key=lambda x: x[2])
+print(f"\nbest: {best[1]} on '{best[0]}'  MAE = {best[2]:.4f} Hz "
+      f"(mean over {N_SPLITS*N_REPEATS} splits)")
 
-print("\n=== train RMSE (Hz) ===")
-for name, ypred in predictions.items():
-    print(f"  {name:<10}  {np.sqrt(np.mean((y - ypred)**2)):.4f}")
-
-# --- parity plot ---
+# --- parity plots (out-of-fold predictions, one per config) ---
 n_models = len(models)
 cols     = 3
 rows     = (n_models + cols - 1)//cols
 
-for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
-    fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
-    axes = np.atleast_1d(axes).flatten()
-    for ax, (name, ypred) in zip(axes, predictions.items()):
-        ax.scatter(y, ypred, alpha=0.3, s=10, color="tab:blue")
-        lo = min(y.min(), ypred.min())
-        hi = max(y.max(), ypred.max())
-        ax.plot([lo, hi], [lo, hi], "k--", linewidth=1)
-        ax.set_xlabel(r"$J_\mathrm{ref}$ (Hz)")
-        ax.set_ylabel(r"$J_\mathrm{pred}$ (Hz)")
-        ax.set_title(fr"{name}  CV RMSE {cv_rmse[name].mean():.2f} Hz")
-        style_axes(ax, LETTER_COLOUR)
-    for ax in axes[n_models:]:
-        ax.axis("off")
-    fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/ml_parity_{VARIANT}{SUFFIX}.pdf",
-                transparent=TRANSPARENT)
-    plt.close(fig)
+for cfg_name, (X, yc) in datasets.items():
+    predictions = {name: cross_val_predict(model, X, yc, cv=cv_pred, n_jobs=N_JOBS)
+                   for name, model in models.items()}
+    for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
+        fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
+        axes = np.atleast_1d(axes).flatten()
+        for ax, (name, ypred) in zip(axes, predictions.items()):
+            ax.scatter(yc, ypred, alpha=0.3, s=10, color="tab:blue")
+            lo = min(yc.min(), ypred.min())
+            hi = max(yc.max(), ypred.max())
+            ax.plot([lo, hi], [lo, hi], "k--", linewidth=1)
+            ax.set_xlabel(r"$J_\mathrm{ref}$ (Hz)")
+            ax.set_ylabel(r"$J_\mathrm{pred}$ (Hz)")
+            ax.set_title(fr"{name}  MAE {mae_mean[cfg_name][name]:.2f} Hz")
+            style_axes(ax, LETTER_COLOUR)
+        for ax in axes[n_models:]:
+            ax.axis("off")
+        fig.suptitle(cfg_name)
+        fig.tight_layout()
+        fig.savefig(f"{PLOT_DIR}/ml_parity_{VARIANT}_{cfg_name}{SUFFIX}.pdf",
+                    transparent=TRANSPARENT)
+        plt.close(fig)
 

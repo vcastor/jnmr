@@ -3,7 +3,7 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
-
+from sklearn.mixture import GaussianMixture
 from hassan_functions.db import table_exists, column_exists
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
@@ -12,10 +12,10 @@ DB_PATH  = "nmr_jcoupling.db"
 
 # (variant, label, color)
 VARIANTS = [
-    ("TZ2P_FC",   "TZ2P FC",   "steelblue"),
-    ("TZ2P_all",  "TZ2P all",  "deepskyblue"),
-    ("TZ2PJ_FC",  "TZ2PJ FC",  "darkorange"),
-    ("TZ2PJ_all", "TZ2PJ all", "crimson"),
+    ("TZ2P_FC",   r"TZ2P\phantom{J} FC",   "steelblue"),
+    ("TZ2P_all",  r"TZ2P\phantom{J} all",  "deepskyblue"),
+    ("TZ2PJ_FC",  r"TZ2PJ FC",  "darkorange"),
+    ("TZ2PJ_all", r"TZ2PJ all", "crimson"),
 ]
 
 # experimental values
@@ -111,7 +111,7 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
         ax.plot(x, kde(x), color=color, linewidth=2.5, label=leg)
         ax.axvline(mean, color=color, linestyle=":", linewidth=1.5, alpha=0.8)
     if exp_mean is not None:
-        exp_label = (r"J$_\mathrm{exp}$"+f" = {exp_mean}±{exp_std} Hz" if exp_std is not None
+        exp_label = (r"\phantom{TZ2P}J$_\mathrm{exp}$"+f" = {exp_mean}±{exp_std} Hz" if exp_std is not None
                      else f"J$_\mathrm{exp}$ = {exp_mean} Hz")
         ax.axvline(exp_mean, color=LETTER_COLOUR, ls="--", linewidth=1.8, label=exp_label)
         if exp_std is not None:
@@ -156,6 +156,26 @@ def plot_j_vs_distance(j_values, distances, output):
     fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
+def print_bimodal_stats(j_values, label):
+    if j_values.size < 10:
+        return
+    gmm = GaussianMixture(n_components=2, random_state=0, max_iter=300)
+    gmm.fit(j_values.reshape(-1, 1))
+    # sort by peak position
+    idx   = np.argsort(gmm.means_.ravel())
+    means = gmm.means_.ravel()[idx]
+    stds  = np.sqrt(gmm.covariances_.ravel()[idx])
+    ci95  = 1.96*stds
+
+    global_mean = np.mean(j_values)
+    mae         = np.mean(np.abs(j_values - global_mean))
+
+    print(f"\n  -- Bimodal fit: {label} --")
+    print(f"  Peak 1:      {means[0]:.4f} ± {ci95[0]:.4f} Hz  (95% CI, σ={stds[0]:.4f})")
+    print(f"  Peak 2:      {means[1]:.4f} ± {ci95[1]:.4f} Hz  (95% CI, σ={stds[1]:.4f})")
+    print(f"  Global mean: {global_mean:.4f} Hz")
+    print(f"  MAE:         {mae:.4f} Hz")
+
 # ============================== #
 #              Main
 # ============================== #
@@ -171,6 +191,7 @@ for variant, label, color in VARIANTS:
     steps = get_processed_steps(cursor, variant)
     j     = collect_j_values(cursor, steps, "intra", variant)
     print_stats(j, f"Intra · {label}")
+    print_bimodal_stats(j, f"Intra · {label}")
     intra_data.append((label, j, color))
 
 # inter · all variants overlay
