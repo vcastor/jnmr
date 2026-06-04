@@ -8,7 +8,7 @@ CDFT_DIR  = "run_scripts/cdft"
 CDFT_OUT  = "amsoutput/cdft"
 VARIANTS  = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
 PARTITION = "court"
-WALLTIME  = "46:00:00"
+WALLTIME  = "47:00:00"
 
 SL_TEMPLATE = """\
 #!/bin/bash

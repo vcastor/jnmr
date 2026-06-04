@@ -40,7 +40,8 @@ output_warning.py       # mark SCF-not-converged steps in the DB
 output_reader.py        # parse ADF output, fill J columns
 populate_intra_dihedral.py  # backfill intra dihedral / distance columns
 qtaim_generator.py      # write QTAIM .run files for the converged steps
-qtaim_reader.py         # read DI matrices into the DB
+cdft_generator.py       # write CDFT .run files
+aim_cdft_reader.py      # parse QTAIM (DI + H charges) and CDFT (chi) into the DB
 ```
 
 Analysis (run after the data is in):
@@ -49,12 +50,46 @@ Analysis (run after the data is in):
 distance_intra.py            # intra distance / dihedral plots
 distance_inter.py            # inter distance plots, incl. double bridges
 qtaim_distance_analysis.py   # BCP rho vs distance scatter / histogram
+qtaim_charge_analysis.py     # QTAIM net-charge histogram for H in CH2 (N-side vs O-side)
 visualiser_data.py           # |J| distributions per basis / variant
 karplus_fit.py               # Karplus + distance fits, RMSE summary
 direct_dij.py                # direct dipolar coupling |D_ij| histogram
 regression_dij.py            # DI vs |J| scatter
 find_missing_tz2p_fc.py      # report steps missing a variant
 ```
+
+## Atom indexing
+
+Atom numbers stored in the DB (`H_pert`, `H_resp`) and used by ADF / QTAIM /
+CDFT input and output refer to a **canonical reordering** of the cluster,
+NOT the order atoms have in `clusters/*.xyz`. The reordering is the one
+`run_generator.py` applies when it writes the `.run` files:
+
+1. `cluster.separate()` splits the cluster into molecules.
+2. `classify_sort(mols, centre, FORMULAS)` groups by species, BFS-canonicalises
+   atoms inside each molecule, and sorts each species list by COM-distance to
+   the cluster centre.
+3. Atoms are concatenated in the `SPECIES` order
+   (`['urea', 'choline', 'chloride']`) and numbered globally from 1.
+
+Any script that needs to look up a value by atom index (charge, DI, chi,
+BCP) **must** reproduce this reordering and tag each atom with the global
+index before querying:
+
+```python
+mol_data = classify_sort(cluster.separate(), centre,
+                         {k: FORMULAS[k] for k in SPECIES})
+offs = compute_offsets(mol_data, SPECIES)
+for name in SPECIES:
+    for mi, mol in enumerate(mol_data[name]):
+        off = offs[name][mi]
+        for ai, at in enumerate(mol.atoms):
+            at.cluster_id = off + ai + 1
+```
+
+Scripts that work only with `at.coords` (e.g. `distance_intra.py`,
+`distance_inter.py`) don't need this — they never cross the
+xyz ↔ ADF-output index boundary.
 
 ## `hassan_functions/` library
 

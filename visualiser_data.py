@@ -12,10 +12,10 @@ DB_PATH  = "nmr_jcoupling.db"
 
 # (variant, label, color)
 VARIANTS = [
-    ("TZ2P_FC",   r"TZ2P\phantom{J} FC",   "steelblue"),
-    ("TZ2P_all",  r"TZ2P\phantom{J} all",  "deepskyblue"),
-    ("TZ2PJ_FC",  r"TZ2PJ FC",  "darkorange"),
-    ("TZ2PJ_all", r"TZ2PJ all", "crimson"),
+    ("TZ2P_FC",   "TZ2P ",  "steelblue"),
+    ("TZ2P_all",  "TZ2P ",  "deepskyblue"),
+    ("TZ2PJ_FC",  "TZ2PJ",  "darkorange"),
+    ("TZ2PJ_all", "TZ2PJ",  "crimson"),
 ]
 
 # experimental values
@@ -90,8 +90,33 @@ def print_stats(j_values, label):
     print(f"  Min:        {np.min(j_values):.4f} Hz")
     print(f"  Max:        {np.max(j_values):.4f} Hz")
 
-def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
-    """variant_data: list of (label, j_values, color)."""
+def fit_bimodal(j_values, label):
+    """Fit a 2-component GMM. Returns (means, ci95, mae) sorted by peak position."""
+    if j_values.size < 10:
+        return None
+    gmm = GaussianMixture(n_components=2, random_state=0, max_iter=300)
+    gmm.fit(j_values.reshape(-1, 1))
+    idx   = np.argsort(gmm.means_.ravel())
+    means = gmm.means_.ravel()[idx]
+    stds  = np.sqrt(gmm.covariances_.ravel()[idx])
+    ci95  = 1.96*stds
+    mae   = np.mean(np.abs(j_values - np.mean(j_values)))
+    print(f"\n  -- Bimodal fit: {label} --")
+    print(f"  Peak 1:      {means[0]:.4f} ± {ci95[0]:.4f} Hz  (95% CI, σ={stds[0]:.4f})")
+    print(f"  Peak 2:      {means[1]:.4f} ± {ci95[1]:.4f} Hz  (95% CI, σ={stds[1]:.4f})")
+    print(f"  Global mean: {np.mean(j_values):.4f} Hz")
+    print(f"  MAE:         {mae:.4f} Hz")
+    return means, ci95, mae
+
+def _leg_row(label, mean, mae):
+    """Build a monospace-aligned legend string.
+    Columns: basis(5) | ⟨J⟩ = | value(5) | ± | err(5) | Hz
+    Both '=' and '±' align vertically across all rows."""
+    return f"{label} \u27e8J\u27e9 = {mean:5.2f} \u00b1 {mae:5.2f} Hz"
+
+def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None, gmm_peaks=None):
+    """variant_data: list of (label, j_values, color).
+    gmm_peaks: dict label -> (means, ci95) for peak annotations."""
     finite = [v for _, v, _ in variant_data if v.size > 0]
     if not finite:
         return
@@ -101,37 +126,70 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None):
     x = np.linspace(0, xmax, 500)
 
     fig, ax = plt.subplots(figsize=(8, 5))
+
+    kde_store   = {}  # label -> (x, kde_y, color)
+    leg_handles = []
+    leg_labels  = []
+
     for label, vals, color in variant_data:
         if vals.size < 2:
             continue
         mean = cubic_mean(vals)
-        disp = cubic_dispersion(vals)
-        leg  = f"{label}  ⟨J⟩={mean:.2f}±{disp:.2f} Hz"
+        mae  = np.mean(np.abs(vals - np.mean(vals)))
         kde  = gaussian_kde(vals, bw_method=0.3)
-        ax.plot(x, kde(x), color=color, linewidth=2.5, label=leg)
+        y    = kde(x)
+        kde_store[label] = (x, y, color)
+        line, = ax.plot(x, y, color=color, linewidth=2.5)
         ax.axvline(mean, color=color, linestyle=":", linewidth=1.5, alpha=0.8)
+        leg_handles.append(line)
+        leg_labels.append(_leg_row(label, mean, mae))
+
     if exp_mean is not None:
-        exp_label = (r"\phantom{TZ2P}J$_\mathrm{exp}$"+f" = {exp_mean}±{exp_std} Hz" if exp_std is not None
-                     else f"J$_\mathrm{exp}$ = {exp_mean} Hz")
-        ax.axvline(exp_mean, color=LETTER_COLOUR, ls="--", linewidth=1.8, label=exp_label)
+        exp_line = ax.axvline(exp_mean, color=LETTER_COLOUR, ls="--", linewidth=1.8)
         if exp_std is not None:
             ax.axvspan(exp_mean-exp_std, exp_mean+exp_std,
                        color=LETTER_COLOUR, alpha=0.12, zorder=0)
+        # align exp row: same column widths, 'J exp' in place of 'TZ2PJ ⟨J⟩'
+        exp_txt = f"J exp     = {exp_mean:5.3f} \u00b1 {exp_std:5.3f} Hz"
+        leg_handles.append(exp_line)
+        leg_labels.append(exp_txt)
+
+    all_y = [y for _, y, _ in kde_store.values()]
+    ymax  = max(np.max(y) for y in all_y)
+    ax.set_ylim(0, ymax*1.1)
+
+    if gmm_peaks is not None:
+        for label, (peaks_m, peaks_ci) in gmm_peaks.items():
+            if label not in kde_store:
+                continue
+            xc, yc, color = kde_store[label]
+            for pm, pci in zip(peaks_m, peaks_ci):
+                # KDE height at the GMM mean position
+                y_at_pm = float(np.interp(pm, xc, yc))
+                # vertical line from 0 to the curve height only
+                ax.vlines(pm, 0, y_at_pm, color=color, linestyle="--",
+                          linewidth=1.0, alpha=0.6)
+                # text uses GMM mean ± ci95, placed above the curve
+                txt = f"{pm:.2f}\u00b1{pci:.2f}"
+                ax.text(pm, y_at_pm + ymax*0.03, txt,
+                        ha="center", va="bottom", fontsize=7, color=color)
+
     ax.set_xlabel("J coupling (Hz)")
     ax.set_ylabel("Relative frequency")
     ax.set_title(title)
     ax.set_xlim(0, xmax)
 
-    # style first, then build legend so nothing overrides our frame settings
     style_axes(ax, LETTER_COLOUR)
 
     if TRANSPARENT:
-        leg = ax.legend(loc="upper right", frameon=False)
+        leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=False,
+                        prop={"family": "monospace", "size": 9})
         leg.get_frame().set_facecolor("none")
         leg.get_frame().set_edgecolor("none")
         leg.get_frame().set_alpha(0)
     else:
-        leg = ax.legend(loc="upper right", frameon=True)
+        leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=True,
+                        prop={"family": "monospace", "size": 9})
         frame = leg.get_frame()
         frame.set_facecolor((1.0, 1.0, 1.0, 1.0))
         frame.set_edgecolor(LETTER_COLOUR)
@@ -156,26 +214,6 @@ def plot_j_vs_distance(j_values, distances, output):
     fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
-def print_bimodal_stats(j_values, label):
-    if j_values.size < 10:
-        return
-    gmm = GaussianMixture(n_components=2, random_state=0, max_iter=300)
-    gmm.fit(j_values.reshape(-1, 1))
-    # sort by peak position
-    idx   = np.argsort(gmm.means_.ravel())
-    means = gmm.means_.ravel()[idx]
-    stds  = np.sqrt(gmm.covariances_.ravel()[idx])
-    ci95  = 1.96*stds
-
-    global_mean = np.mean(j_values)
-    mae         = np.mean(np.abs(j_values - global_mean))
-
-    print(f"\n  -- Bimodal fit: {label} --")
-    print(f"  Peak 1:      {means[0]:.4f} ± {ci95[0]:.4f} Hz  (95% CI, σ={stds[0]:.4f})")
-    print(f"  Peak 2:      {means[1]:.4f} ± {ci95[1]:.4f} Hz  (95% CI, σ={stds[1]:.4f})")
-    print(f"  Global mean: {global_mean:.4f} Hz")
-    print(f"  MAE:         {mae:.4f} Hz")
-
 # ============================== #
 #              Main
 # ============================== #
@@ -184,14 +222,18 @@ conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 # intra · all variants overlay
-intra_data = []
+intra_data  = []
+intra_peaks = {}
 for variant, label, color in VARIANTS:
     if variant in ["TZ2PJ_all", "TZ2P_all"]:
         continue
-    steps = get_processed_steps(cursor, variant)
-    j     = collect_j_values(cursor, steps, "intra", variant)
+    steps  = get_processed_steps(cursor, variant)
+    j      = collect_j_values(cursor, steps, "intra", variant)
     print_stats(j, f"Intra · {label}")
-    print_bimodal_stats(j, f"Intra · {label}")
+    result = fit_bimodal(j, f"Intra · {label}")
+    if result is not None:
+        means, ci95, _ = result
+        intra_peaks[label] = (means, ci95)
     intra_data.append((label, j, color))
 
 # inter · all variants overlay
@@ -206,7 +248,8 @@ for variant, label, color in VARIANTS:
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
-                 f"hist_intra{SUFFIX}.pdf", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR)
+                 f"hist_intra{SUFFIX}.pdf", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR,
+                 gmm_peaks=intra_peaks)
     plot_overlay(inter_data, "Intermolecular J coupling (NH2-CH3)",
                  f"hist_inter{SUFFIX}.pdf", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR)
 
