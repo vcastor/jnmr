@@ -29,5 +29,5 @@ ssh criann 'bash -s' < run_criann.sh
 echo "Updating database with J values..."
 ./output_reader.py
 ./output_warning.py
-./qtaim_reader.py
+./qtaim_cdft_reader.py
 
