@@ -1,15 +1,25 @@
 #!$AMSBIN/plams
 import os
 import glob
+from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
 from hassan_functions.geometry import distance
 from hassan_functions.finders import find_xh_groups, find_adjacent_xh_pair_anchored
 from hassan_functions.ordering import classify_sort, compute_offsets
 from hassan_functions.constants import FORMULAS
+from hassan_functions.plotting import PLOT_STYLES, style_axes
+
+plt.rcParams['font.size']       = 16
+plt.rcParams['axes.titlesize']  = 19
+plt.rcParams['axes.labelsize']  = 16
+plt.rcParams['xtick.labelsize'] = 14
+plt.rcParams['ytick.labelsize'] = 14
+plt.rcParams['legend.fontsize'] = 14
 
 CLUSTERS_DIR = "clusters"
 QTAIM_DIR    = "amsoutput/qtaim"
+PLOT_DIR     = "plots"
 BP_HEADER    = "BOND PATHS (BP) AND PROPERTIES ALONG THEM ARE WRITTEN TO TAPE21"
 SPECIES      = ['urea', 'choline', 'chloride']
 
@@ -47,6 +57,21 @@ def read_bcps(path):
 def bcp_props(bcps, a, b):
     return bcps.get(frozenset({a.cluster_id, b.cluster_id}))
 
+def carbon_tag(c):
+    nbrs = [b.other_end(c) for b in c.bonds]
+    if sum(a.symbol == 'H' for a in nbrs) == 3:
+        return 'CH3'
+    heavy = {a.symbol for a in nbrs if a.symbol != 'H'}
+    return 'CH2N' if 'N' in heavy else 'CH2O'
+
+def site_tag(at):
+    if at.symbol != 'H':
+        return at.symbol
+    nb = at.bonds[0].other_end(at)
+    if nb.symbol == 'C':
+        return f"H({carbon_tag(nb)})"
+    return f"H({nb.symbol})"
+
 # accumulators: each entry is (distance, rho, gb, vb, ratio) ---------------
 nh2_ch3       = []
 o_hch2_all    = []
@@ -59,8 +84,13 @@ o_ch2_oh_bridge    = []   # O sees H(CH2, any) and H(OH)
 o_ch2N_oh_bridge   = []   # O sees H(CH2-N) and H(OH)
 o_ch2O_oh_bridge   = []   # O sees H(CH2-O) and H(OH)
 
+other_by_type      = defaultdict(list)   # label -> [(d, rho, gb, vb, ratio)]
+n_pairs_other_type = defaultdict(int)    # label -> # interacting pairs showing it
+sig_labels         = set()               # 'other' labels counted toward the 100% (one H + one N/O)
+
 n_systems_used          = 0
 n_pairs_total           = 0
+n_pairs_interacting     = 0
 n_pairs_nh2_ch3         = 0
 n_pairs_o_any           = 0
 n_pairs_o_hch2_N        = 0
@@ -72,6 +102,8 @@ n_pairs_o_hoh           = 0
 n_pairs_o_ch2_oh_bridge = 0
 n_pairs_o_ch2N_oh       = 0
 n_pairs_o_ch2O_oh       = 0
+n_pairs_other           = 0
+n_other_bcp             = 0
 
 init()
 
@@ -104,10 +136,16 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
     bcps     = read_bcps(qpath)
 
     for u in ureas:
-        n_urea = [at for at in u.atoms if at.symbol == 'N']
-        o_urea = next(at for at in u.atoms if at.symbol == 'O')
+        n_urea   = [at for at in u.atoms if at.symbol == 'N']
+        o_urea   = next(at for at in u.atoms if at.symbol == 'O')
+        urea_ids = {at.cluster_id for at in u.atoms}
         for ch in cholines:
             n_pairs_total += 1
+            ch_ids    = {at.cluster_id for at in ch.atoms}
+            pair_keys = [k for k in bcps if (k & urea_ids) and (k & ch_ids)]
+            if pair_keys:
+                n_pairs_interacting += 1
+            tracked = set()
 
             nh2_hit = False
             for n in n_urea:
@@ -116,6 +154,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                         p = bcp_props(bcps, n, h)
                         if p is not None:
                             nh2_ch3.append((distance(n, h), p['rho'], p['gb'], p['vb'], p['ratio']))
+                            tracked.add(frozenset({n.cluster_id, h.cluster_id}))
                             nh2_hit = True
             if nh2_hit:
                 n_pairs_nh2_ch3 += 1
@@ -126,6 +165,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
             hits_O = [(h, bcp_props(bcps, o_urea, h)) for h in hO]
             hits_O = [(h, p) for h, p in hits_O if p is not None]
             hits   = hits_N + hits_O
+            tracked |= {frozenset({o_urea.cluster_id, h.cluster_id}) for h, _ in hits}
             if hits:
                 n_pairs_o_any += 1
                 if hits_N:
@@ -153,6 +193,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                         for _, hs in find_xh_groups(ch, 'O', 1)
                         for h in hs]
             hoh_hits = [(h, p) for h, p in hoh_hits if p is not None]
+            tracked |= {frozenset({o_urea.cluster_id, h.cluster_id}) for h, _ in hoh_hits}
             if hoh_hits:
                 n_pairs_o_hoh += 1
                 for h, p in hoh_hits:
@@ -170,6 +211,26 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                     n_pairs_o_ch2O_oh += 1
                     for h, p in hits_O + hoh_hits:
                         o_ch2O_oh_bridge.append((distance(o_urea, h), p['rho'], p['gb'], p['vb'], p['ratio']))
+
+            other_here = set()
+            for k in pair_keys:
+                if k in tracked:
+                    continue
+                ua    = next(a for a in u.atoms if a.cluster_id in k)
+                ca    = next(a for a in ch.atoms if a.cluster_id in k)
+                label = f"urea {site_tag(ua)} - choline {site_tag(ca)}"
+                if (ua.symbol == 'H') ^ (ca.symbol == 'H'):
+                    heavy = ca.symbol if ua.symbol == 'H' else ua.symbol
+                    if heavy in ('N', 'O'):
+                        sig_labels.add(label)
+                p     = bcps[k]
+                other_by_type[label].append((distance(ua, ca), p['rho'], p['gb'], p['vb'], p['ratio']))
+                other_here.add(label)
+                n_other_bcp += 1
+            if other_here:
+                n_pairs_other += 1
+                for label in other_here:
+                    n_pairs_other_type[label] += 1
 
 finish()
 
@@ -218,9 +279,16 @@ if n_pairs_o_ch2_oh_bridge:
     summary("CH2-N + OH                       ", o_ch2N_oh_bridge)
     summary("CH2-O + OH                       ", o_ch2O_oh_bridge)
     print()
-if n_pairs_total:
-    def pct(n): return f"{n}/{n_pairs_total}  ({100*n/n_pairs_total:.1f}%)"
-    print("-- occurrence comparison (per urea-choline pair) --")
+print("Other urea-choline BCPs (not in the categories above)")
+print(f"  pairs with >=1 'other' BCP:  {n_pairs_other}/{n_pairs_interacting}")
+print(f"  total 'other' BCPs:          {n_other_bcp}")
+for label in sorted(other_by_type, key=lambda L: -len(other_by_type[L])):
+    summary(label, other_by_type[label])
+print()
+if n_pairs_interacting:
+    def pct(n): return f"{n}/{n_pairs_interacting}  ({100*n/n_pairs_interacting:.1f}%)"
+    print("-- occurrence comparison (per interacting urea-choline pair) --")
+    print(f"  interacting pairs (>=1 BCP):   {n_pairs_interacting}/{n_pairs_total}  ({100*n_pairs_interacting/n_pairs_total:.1f}%)")
     print(f"  N(urea)-H(CH3):                {pct(n_pairs_nh2_ch3)}")
     print(f"  O(urea)-H(CH2-N):              {pct(n_pairs_o_hch2_N)}")
     print(f"  O(urea)-H(CH2-O):              {pct(n_pairs_o_hch2_O)}")
@@ -229,45 +297,57 @@ if n_pairs_total:
     print(f"  O(urea)-H(CH2-N) & H(OH):      {pct(n_pairs_o_ch2N_oh)}")
     print(f"  O(urea)-H(CH2-O) & H(OH):      {pct(n_pairs_o_ch2O_oh)}")
     print(f"  O(urea)-H(CH2,any) & H(OH):    {pct(n_pairs_o_ch2_oh_bridge)}")
+    for label in sorted(n_pairs_other_type, key=lambda L: -n_pairs_other_type[L]):
+        print(f"  {label+':':<31}{pct(n_pairs_other_type[label])}")
 
-# ── plots: 2-column grid, conditional bridge panels ───────────────────────
+n_other_sig  = sum(len(other_by_type[L]) for L in sig_labels)
+n_other_weak = n_other_bcp - n_other_sig
+n_bcp        = len(nh2_ch3) + len(o_hch2_all) + len(o_hoh) + n_other_bcp
+n_bcp_sig    = len(nh2_ch3) + len(o_hch2_all) + len(o_hoh) + n_other_sig
+if n_bcp_sig:
+    def pctb(n): return f"{n}/{n_bcp_sig}  ({100*n/n_bcp_sig:.1f}%)"
+    print()
+    print("-- BCP-level breakdown (per significant urea-choline BCP, sums to 100%) --")
+    print(f"  significant urea-choline BCPs: {n_bcp_sig}  (of {n_bcp} total)")
+    print(f"  N(urea)-H(CH3):                {pctb(len(nh2_ch3))}")
+    print(f"  O(urea)-H(CH2-N):              {pctb(len(o_hch2_N))}")
+    print(f"  O(urea)-H(CH2-O):              {pctb(len(o_hch2_O))}")
+    print(f"  O(urea)-H(OH):                 {pctb(len(o_hoh))}")
+    for label in sorted(sig_labels, key=lambda L: -len(other_by_type[L])):
+        print(f"  {label+':':<31}{pctb(len(other_by_type[label]))}")
+    if n_other_weak:
+        print(f"  -- weak / numerically noisy (excluded; {n_other_weak}/{n_bcp} = {100*n_other_weak/n_bcp:.1f}% of all BCPs) --")
+        for label in sorted((L for L in other_by_type if L not in sig_labels),
+                            key=lambda L: -len(other_by_type[L])):
+            n = len(other_by_type[label])
+            print(f"  {label+':':<31}{n}/{n_bcp}  ({100*n/n_bcp:.1f}%)")
+
+# ── plots: distance vs BCP properties, 3 subfigures ───────────────────────
 PROPS = [
     (1, r"$\rho_{BCP}$ (au)", "steelblue"),
     (2, r"$G_b$ (au)",        "seagreen"),
     (3, r"$V_b$ (au)",        "crimson"),
 ]
 BONDS = [
-    (nh2_ch3,    "N(urea NH2) – H(CH3)"),
-    (o_hch2_N,   "O(urea) – H(CH2-N)"),
-    (o_hch2_O,   "O(urea) – H(CH2-O)"),
-    (o_hoh,      "O(urea) – H(OH)"),
+    (nh2_ch3,    r"N(urea NH$_2$) – H(CH$_3$)"),
+    (o_hch2_all, r"O(urea) – H(any CH$_2$)"),
+    (o_hoh,      r"O(urea) – H(OH)"),
 ]
-if n_pairs_o_bridge > 0:
-    BONDS.append((o_hch2_bridge, "O(urea) – H(CH2-N)+H(CH2-O)"))
-if n_pairs_o_ch2N_oh > 0:
-    BONDS.append((o_ch2N_oh_bridge, "O(urea) – H(CH2-N)+H(OH)"))
-if n_pairs_o_ch2O_oh > 0:
-    BONDS.append((o_ch2O_oh_bridge, "O(urea) – H(CH2-O)+H(OH)"))
 
-ncols = 3
-nrows = 2
-fig, axes = plt.subplots(nrows, ncols, figsize=(18, 10))
-axes = axes.flatten()
-
-for ax, (data, title) in zip(axes, BONDS):
-    if data:
-        arr = np.array(data)
-        for col, ylabel, color in PROPS:
-            ax.scatter(arr[:, 0], arr[:, col], s=22, c=color, alpha=0.6,
-                       edgecolor='black', linewidth=0.3, label=ylabel)
-    ax.set_title(f"{title}  (n={len(data)})")
-    ax.set_xlabel("distance (Å)")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-
-for ax in axes[len(BONDS):]:
-    ax.set_visible(False)
-
-fig.tight_layout()
-plt.show()
+for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    for ax, (data, title) in zip(axes, BONDS):
+        if data:
+            arr = np.array(data)
+            for col, ylabel, color in PROPS:
+                ax.scatter(arr[:, 0], arr[:, col], s=22, c=color, alpha=0.6,
+                           edgecolor='black', linewidth=0.3, label=ylabel)
+        ax.set_title(title)
+        ax.set_xlabel("distance (Å)")
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.3)
+        style_axes(ax, LETTER_COLOUR)
+    fig.tight_layout()
+    fig.savefig(f"{PLOT_DIR}/qtaim_distance{SUFFIX}.pdf", transparent=TRANSPARENT)
+    plt.close(fig)
 

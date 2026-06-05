@@ -4,12 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 DB_PATH = "nmr_jcoupling.db"
-JCOL = "J_TZ2P_FC"
+JCOL    = "J_TZ2P_FC"
 
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
-cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'step_%'")
+cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'step_%_intra'")
 tables = [r[0] for r in cur.fetchall()]
 
 di, j = [], []

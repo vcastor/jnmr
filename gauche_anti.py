@@ -46,41 +46,39 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
     for ch in mol_data['choline']:
         d = ncco_dihedral(ch)
         if d is not None:
-            dihedrals.append(d)
+            dihedrals.append(abs(d))
 
 finish()
 
 d_arr    = np.array(dihedrals)
 n_tot    = len(d_arr)
-n_gauche = int(np.sum(np.abs(d_arr) <= GAUCHE_THRESHOLD))
+n_gauche = int(np.sum(d_arr <= GAUCHE_THRESHOLD))
 n_anti   = n_tot - n_gauche
 
 print(f"snapshots:    {n_systems_used}")
 print(f"dihedrals:    {n_tot}")
-print(f"  gauche (|phi| <= {GAUCHE_THRESHOLD:.4f} rad):  "
+print(f"  gauche (phi <= {GAUCHE_THRESHOLD:.4f} rad):  "
       f"{n_gauche}  ({100*n_gauche/n_tot:.1f}%)")
-print(f"  anti   (|phi| >  {GAUCHE_THRESHOLD:.4f} rad):  "
+print(f"  anti   (phi >  {GAUCHE_THRESHOLD:.4f} rad):  "
       f"{n_anti}  ({100*n_anti/n_tot:.1f}%)")
 
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-ticks      = [-np.pi, -2*np.pi/3, -np.pi/3, 0, np.pi/3, 2*np.pi/3, np.pi]
-ticklabels = [r'$-\pi$', r'$-2\pi/3$', r'$-\pi/3$', r'$0$',
-              r'$\pi/3$',  r'$2\pi/3$',  r'$\pi$']
+ticks      = [0, np.pi/3, 2*np.pi/3, np.pi]
+ticklabels = [r'$0$', r'$\pi/3$', r'$2\pi/3$', r'$\pi$']
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, ax = plt.subplots(figsize=(7, 4))
 
-    ax.axvspan(-np.pi, -GAUCHE_THRESHOLD, alpha=0.12, color='tomato',    label='anti')
-    ax.axvspan(-GAUCHE_THRESHOLD, GAUCHE_THRESHOLD, alpha=0.12, color='steelblue', label='gauche')
-    ax.axvspan( GAUCHE_THRESHOLD,  np.pi, alpha=0.12, color='tomato')
+    ax.axvspan(0, GAUCHE_THRESHOLD, alpha=0.12, color='steelblue', label='gauche')
+    ax.axvspan(GAUCHE_THRESHOLD, np.pi, alpha=0.12, color='tomato', label='anti')
 
-    hist(ax, list(d_arr), None, 'steelblue', LETTER_COLOUR, bins=36)
+    hist(ax, list(d_arr), None, 'steelblue', LETTER_COLOUR, bins=40)
 
     ax.set_xticks(ticks)
     ax.set_xticklabels(ticklabels)
-    ax.set_xlim(-np.pi, np.pi)
-    ax.set_xlabel(r'$\phi$ (rad)')
+    ax.set_xlim(0, np.pi)
+    ax.set_xlabel(r'$|\phi|$ (rad)')
     ax.set_ylabel('density')
     ax.set_title(r'N–CH$_2$–CH$_2$–O dihedral angle')
     ax.legend(fontsize=9)
@@ -88,3 +86,4 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/gauche_anti{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)
+

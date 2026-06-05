@@ -7,6 +7,13 @@ from sklearn.mixture import GaussianMixture
 from hassan_functions.db import table_exists, column_exists
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
+plt.rcParams['font.size']       = 16
+plt.rcParams['axes.titlesize']  = 19
+plt.rcParams['axes.labelsize']  = 16
+plt.rcParams['xtick.labelsize'] = 14
+plt.rcParams['ytick.labelsize'] = 14
+plt.rcParams['legend.fontsize'] = 14
+
 PLOT_DIR = "plots"
 DB_PATH  = "nmr_jcoupling.db"
 
