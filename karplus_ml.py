@@ -10,33 +10,45 @@ from sklearn.gaussian_process         import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.preprocessing   import StandardScaler
 from sklearn.pipeline        import Pipeline
-from sklearn.model_selection import RepeatedKFold, KFold, cross_validate, cross_val_predict
-from hassan_functions.db       import column_exists
+from sklearn.model_selection import KFold, cross_validate, cross_val_predict
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
 plt.rcParams["text.usetex"]         = True
 plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
 
-PLOT_DIR  = "plots"
-DB_PATH   = "nmr_jcoupling.db"
-VARIANT   = "TZ2P_FC"
-J_COL     = f"J_{VARIANT}"
-RNG       = 42
-N_SPLITS  = 5
-N_REPEATS = 5                            # >=5 splits total: N_SPLITS*N_REPEATS
-N_JOBS    = os.cpu_count() - 10          # leave 10 cores (+RAM headroom) free
+PLOT_DIR = "plots"
+DB_PATH  = "nmr_jcoupling.db"
+VARIANT  = "TZ2P_FC"
+J_COL    = f"J_{VARIANT}"
+RNG      = 69
+N_SPLITS = 5                   # 10 random splits -> averaged MAE/RMSE
+N_JOBS   = 10                  # cap at 10 cores, other jobs are running
 
-# feature sets to compare. add a new descriptor by writing its DB column name
-# into any config below; DESCRIPTORS and the loader pick it up automatically,
-# and rows where it is NULL are dropped only for the configs that use it.
 CONFIGS = {
-    "phi":     ["dihedral"],
-    "geom":    ["dihedral", "angle_hcc", "angle_cch", "distance"],
-    "geom_DI": ["dihedral", "angle_hcc", "angle_cch", "distance", "DI"],
-    "phi_DI":  ["dihedral", "DI"],
-    "DI":      ["DI"],
+    "phi":         ["dihedral"],
+    "geom":        ["dihedral", "angle_hcc", "angle_cch", "distance"],
+    "geom_DI":     ["dihedral", "angle_hcc", "angle_cch", "distance", "DI"],
+    "geom_chi":    ["dihedral", "angle_hcc", "angle_cch", "distance", "chi"],
+    "geom_DI_chi": ["dihedral", "angle_hcc", "angle_cch", "distance", "DI", "chi"],
 }
 DESCRIPTORS = sorted({c for cols in CONFIGS.values() for c in cols})
+
+def table_cols(cursor, table):
+    cursor.execute(f"PRAGMA table_info({table})")
+    return {r[1] for r in cursor.fetchall()}
+
+def flag_outliers(vals):
+    # modified z-score (median/MAD); robust for the handful of folds we have
+    med = np.median(vals)
+    mad = np.median(np.abs(vals - med))
+    if mad == 0:
+        std = vals.std()
+        if std == 0:
+            return [], med
+        z = (vals - med)/std
+        return [i for i in range(vals.size) if abs(z[i]) > 2.5], med
+    z = 0.6745*(vals - med)/mad
+    return [i for i in range(vals.size) if abs(z[i]) > 3.5], med
 
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -52,15 +64,16 @@ for n_step in steps:
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
         (t,),
     )
-    if cursor.fetchone() is None:            continue
-    if not column_exists(cursor, t, J_COL):  continue
-    present = [c for c in DESCRIPTORS if column_exists(cursor, t, c)]
-    cursor.execute(f"SELECT {', '.join(present + [J_COL])} FROM {t} WHERE {J_COL} IS NOT NULL")
+    if cursor.fetchone() is None:    continue
+    present = table_cols(cursor, t)
+    if J_COL not in present:         continue
+    sel = [c for c in DESCRIPTORS if c in present]
+    cursor.execute(f"SELECT {', '.join(sel + [J_COL])} FROM {t} WHERE {J_COL} IS NOT NULL")
     for row in cursor.fetchall():
-        vals = dict(zip(present, row))
+        vals = dict(zip(sel + [J_COL], row))
         for c in DESCRIPTORS:
             data[c].append(vals.get(c))
-        js.append(row[-1])
+        js.append(vals[J_COL])
 
 conn.close()
 
@@ -69,9 +82,9 @@ y    = np.abs(np.asarray(js, dtype=float))
 
 datasets = {}
 for cfg_name, cols in CONFIGS.items():
-    M    = np.column_stack([data[c] for c in cols])
-    mask = ~np.isnan(M).any(axis=1)
-    datasets[cfg_name] = (M[mask], y[mask])
+    X    = np.column_stack([data[c] for c in cols])
+    mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
+    datasets[cfg_name] = (X[mask], y[mask])
 
 kernel = (ConstantKernel(1.0, (1e-3, 1e3))
           *RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
@@ -98,13 +111,17 @@ models = {
     ]),
 }
 
-cv      = RepeatedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=RNG)
-cv_pred = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
+cv = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
+
+print(f"=== {VARIANT}: {N_SPLITS} random splits (KFold shuffle, seed {RNG}), "
+      f"n_jobs={N_JOBS} ===")
+print(f"target: |{J_COL}|  range {y.min():.4f} -> {y.max():.4f}")
 
 mae_mean = {}
+flagged  = []                  # (cfg, model, fold, mae, median)
 for cfg_name, (X, yc) in datasets.items():
-    print(f"\n=== {VARIANT} / {cfg_name}: n = {yc.size}, features: {CONFIGS[cfg_name]} ===")
-    print(f"{'model':<10}{'MAE':>10}{'±std':>9}{'min':>9}{'max':>9}{'RMSE':>10}")
+    print(f"\n--- {cfg_name}: n = {yc.size}, features: {', '.join(CONFIGS[cfg_name])} ---")
+    print(f"{'model':<10}{'MAE':>9}{'±std':>9}{'min':>9}{'max':>9}{'RMSE':>9}  outliers")
     mae_mean[cfg_name] = {}
     for name, model in models.items():
         sc = cross_validate(model, X, yc, cv=cv,
@@ -114,37 +131,53 @@ for cfg_name, (X, yc) in datasets.items():
         mae  = -sc["test_neg_mean_absolute_error"]
         rmse = -sc["test_neg_root_mean_squared_error"]
         mae_mean[cfg_name][name] = mae.mean()
-        print(f"{name:<10}{mae.mean():>10.4f}{mae.std():>9.4f}"
-              f"{mae.min():>9.4f}{mae.max():>9.4f}{rmse.mean():>10.4f}")
+
+        out, med = flag_outliers(mae)
+        for i in out:
+            flagged.append((cfg_name, name, i, mae[i], med))
+        tag = "" if not out else "  *folds " + ",".join(
+            f"{i}({mae[i]:.2f})" for i in out)
+
+        print(f"{name:<10}{mae.mean():>9.4f}{mae.std():>9.4f}"
+              f"{mae.min():>9.4f}{mae.max():>9.4f}{rmse.mean():>9.4f}{tag}")
 
 best = min(((c, m, v) for c, mm in mae_mean.items() for m, v in mm.items()),
            key=lambda x: x[2])
 print(f"\nbest: {best[1]} on '{best[0]}'  MAE = {best[2]:.4f} Hz "
-      f"(mean over {N_SPLITS*N_REPEATS} splits)")
+      f"(mean over {N_SPLITS} splits)")
 
-# --- parity plots (out-of-fold predictions, one per config) ---
+if flagged:
+    print(f"\n=== fold-MAE outliers (modified z-score > 3.5 vs the other folds) ===")
+    print(f"{'config':<13}{'model':<10}{'fold':>5}{'MAE':>9}{'median':>9}{'ratio':>8}")
+    for cfg_name, name, fold, mae_v, med in flagged:
+        print(f"{cfg_name:<13}{name:<10}{fold:>5}{mae_v:>9.4f}{med:>9.4f}"
+              f"{mae_v/med:>8.2f}")
+else:
+    print("\nno fold-MAE outliers: every split is within trend for all models.")
+
+# --- parity plots (out-of-fold predictions, one grid per config) ---
 n_models = len(models)
-cols     = 3
-rows     = (n_models + cols - 1)//cols
+ncols    = 3
+nrows    = (n_models + ncols - 1)//ncols
 
 for cfg_name, (X, yc) in datasets.items():
-    predictions = {name: cross_val_predict(model, X, yc, cv=cv_pred, n_jobs=N_JOBS)
+    predictions = {name: cross_val_predict(model, X, yc, cv=cv, n_jobs=N_JOBS)
                    for name, model in models.items()}
     for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
-        fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 4*rows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 4*nrows))
         axes = np.atleast_1d(axes).flatten()
         for ax, (name, ypred) in zip(axes, predictions.items()):
             ax.scatter(yc, ypred, alpha=0.3, s=10, color="tab:blue")
             lo = min(yc.min(), ypred.min())
             hi = max(yc.max(), ypred.max())
             ax.plot([lo, hi], [lo, hi], "k--", linewidth=1)
-            ax.set_xlabel(r"$J_\mathrm{ref}$ (Hz)")
-            ax.set_ylabel(r"$J_\mathrm{pred}$ (Hz)")
+            ax.set_xlabel(r"$\vert J_\mathrm{ref}\vert$ (Hz)")
+            ax.set_ylabel(r"$\vert J_\mathrm{pred}\vert$ (Hz)")
             ax.set_title(fr"{name}  MAE {mae_mean[cfg_name][name]:.2f} Hz")
             style_axes(ax, LETTER_COLOUR)
         for ax in axes[n_models:]:
             ax.axis("off")
-        fig.suptitle(cfg_name)
+        fig.suptitle(cfg_name.replace("_", r"\_"))
         fig.tight_layout()
         fig.savefig(f"{PLOT_DIR}/ml_parity_{VARIANT}_{cfg_name}{SUFFIX}.pdf",
                     transparent=TRANSPARENT)

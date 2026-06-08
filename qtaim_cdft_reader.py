@@ -8,7 +8,7 @@ from hassan_functions.db import column_exists
 
 DB_PATH    = "nmr_jcoupling.db"
 QTAIM_DIR  = "amsoutput/qtaim"
-CDFT_DIR   = "amsresults/cdft"
+CDFT_DIR   = "amsoutput/cdft"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
 
