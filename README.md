@@ -22,7 +22,11 @@ mdStepsxyz/             # xyz dump per MD step
 clusters/               # inner-sphere clusters per step
 amsoutput/<variant>/    # ADF NMR output, one dir per basis/variant
 amsoutput/qtaim/        # ADF QTAIM output
+amsoutput/cdft/         # ADF CDFT (conceptual DFT) output
+amsoutput/ch/           # ADF C(urea)-H coupling output
 run_scripts/<variant>/  # generated .run / .sl scripts
+run_scripts/qtaim,cdft/ # generated QTAIM / CDFT scripts
+run_scripts/ch/         # generated C(urea)-H coupling scripts (small clusters)
 plots/                  # output figures
 nmr_jcoupling.db        # SQLite database (see init_db.py for schema)
 hassan_functions/       # shared library, see below
@@ -34,14 +38,13 @@ hassan_functions/       # shared library, see below
 rkf_to_xyz.py           # rkf -> xyz dump (mdStepsrkf -> mdStepsxyz)
 region_selector.py      # carve inner-sphere clusters at the target ratio
 init_db.py              # one-shot DB schema setup
-run_generator.py        # classify cluster, write ADF .run files, seed DB rows
-                        # (submit on cluster: run_criann.sh)
-output_warning.py       # mark SCF-not-converged steps in the DB
-output_reader.py        # parse ADF output, fill J columns
-populate_intra_dihedral.py  # backfill intra dihedral / distance columns
-qtaim_generator.py      # write QTAIM .run files for the converged steps
-cdft_generator.py       # write CDFT .run files
-aim_cdft_reader.py      # parse QTAIM (DI + H charges) and CDFT (chi) into the DB
+coupling_generator.py   # classify cluster, seed DB rows, write the .run + .sl for
+                        # the 4 NMR variants (skipping SCF-warned / already-run
+                        # steps) and the C(urea)-H .run/.sl (court) files.
+populate_geometry.py    # backfill intra dihedral / distance / angle columns
+property_generator.py   # write QTAIM + CDFT .run/.sl files for converged steps
+reader.py               # one pass over the DB: SCF warnings + J columns +
+                        # QTAIM (DI) and CDFT (chi) matrices
 ```
 
 Analysis (run after the data is in):
@@ -49,8 +52,8 @@ Analysis (run after the data is in):
 ```
 distance_intra.py            # intra distance / dihedral plots
 distance_inter.py            # inter distance plots, incl. double bridges
-qtaim_distance_analysis.py   # BCP rho vs distance scatter / histogram
-qtaim_charge_analysis.py     # QTAIM net-charge histogram for H in CH2 (N-side vs O-side)
+qtaim_analysis.py            # BCP rho/Gb/Vb vs distance scatter + QTAIM net-charge
+                             # histogram for H in CH2 (N-side vs O-side)
 visualiser_data.py           # |J| distributions per basis / variant
 karplus_fit.py               # Karplus + distance fits, RMSE summary
 direct_dij.py                # direct dipolar coupling |D_ij| histogram
@@ -63,7 +66,7 @@ find_missing_tz2p_fc.py      # report steps missing a variant
 Atom numbers stored in the DB (`H_pert`, `H_resp`) and used by ADF / QTAIM /
 CDFT input and output refer to a **canonical reordering** of the cluster,
 NOT the order atoms have in `clusters/*.xyz`. The reordering is the one
-`run_generator.py` applies when it writes the `.run` files:
+`coupling_generator.py` applies when it writes the `.run` files:
 
 1. `cluster.separate()` splits the cluster into molecules.
 2. `classify_sort(mols, centre, FORMULAS)` groups by species, BFS-canonicalises
@@ -104,16 +107,17 @@ classify by species.
 | `geometry`  | `distance(a, b)`, `dihedral(a, b, c, d)` |
 | `finders`   | `find_atoms`, `find_xh_groups`, `find_xh_bonds`, `find_adjacent_xh_pairs`, `find_adjacent_xh_pair_anchored` — generic finders driven by atom symbol and H count, with optional `neighbour_symbol` filter and `return_indices` flag |
 | `ordering`  | `canonical_order`, `reorder`, `classify_sort`, `compute_offsets` — BFS canonicalisation of atom indices and species-based sorting of clusters |
-| `io`        | `get_step_from_filename`, `read_xyz`, `normalise_symbol` |
+| `io`        | `get_step_from_filename`, `read_xyz`, `normalise_symbol`, `read_labeled_matrix`, `read_qtaim_charges` |
 | `db`        | `table_exists`, `column_exists` (SQLite helpers) |
+| `criann`    | all CRIANN/SLURM config: `slurm_script(jobname, case, partition, ...)` + the shared `#SBATCH` template, `PARTITION_WALLTIME` (court, tcourt, long, tlong), `VARIANT_SLURM` (per-variant partition/walltime), `SCF_WARNINGS`, `MODULE`, `NTASKS`, `CPUS_PER_TASK` |
 | `plotting`  | `PLOT_STYLES`, `hist`, `mlabel`, `stats`, `style_axes`, `style_cbar` |
 | `constants` | `FORMULAS` (urea, choline, chloride, water), NMR `ISOTOPE_FOR_SYMBOL` and `GAMMA`, physical constants (`MU0_OVER_4PI`, `HBAR`, `TWO_PI`, `ANGSTROM_TO_M`) |
 
 ### Adapting to a different system
 
 1. Add or change a formula in `hassan_functions/constants.FORMULAS`.
-2. Update the `SPECIES` list in `run_generator.py` and
-   `populate_intra_dihedral.py` if the species set changes.
+2. Update the `SPECIES` list in `coupling_generator.py` and
+   `populate_geometry.py` if the species set changes.
 3. Replace finder calls with the relevant symbols, e.g.
    `find_xh_groups(water, 'O', 2)` instead of
    `find_xh_groups(urea, 'N', 2)`.

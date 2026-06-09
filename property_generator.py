@@ -1,51 +1,30 @@
 #!/usr/bin/python3
 import os
 import sqlite3
+from hassan_functions import slurm_script
 
-DB_PATH   = "nmr_jcoupling.db"
-RUN_BASE  = "run_scripts"
-QTAIM_DIR = "run_scripts/qtaim"
-QTAIM_OUT = "amsoutput/qtaim"
-VARIANTS  = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
-PARTITION = "long"
-WALLTIME  = "96:00:00"
+DB_PATH  = "nmr_jcoupling.db"
+RUN_BASE = "run_scripts"
+VARIANTS = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
 
-SL_TEMPLATE = """\
-#!/bin/bash
-
-#SBATCH --exclusive
-#SBATCH -J {jobname}
-#SBATCH --output {jobname}.o%J
-#SBATCH --error  {jobname}.e%J
-#SBATCH --partition {partition}
-#SBATCH --time {walltime}
-
-#SBATCH --ntasks 12
-#SBATCH --cpus-per-task 16
-
-module purge
-module load atomic_simu/cobra-ams/2025.106_amd
-module list
-
-env | grep SCMLICENSE
-
-CASE={case}
-INP=${{CASE}}.run
-OUT=${{CASE}}.out
-
-cp $INP $LOCAL_WORK_DIR
-cd $LOCAL_WORK_DIR
-echo Working directory : $PWD
-
-export SCM_GPUENABLED="FALSE"
-
-set -x
-sh $INP > $OUT
-set +x
-
-mkdir -p $SLURM_SUBMIT_DIR/$SLURM_JOB_ID
-mv * $SLURM_SUBMIT_DIR/$SLURM_JOB_ID
-"""
+# QTAIM and CDFT share everything but the ADF engine block, the I/O dirs and
+# the partition they run on.
+ANALYSES = {
+    "qtaim": {
+        "run_dir":   "run_scripts/qtaim",
+        "out_dir":   "amsoutput/qtaim",
+        "partition": "long",
+        "engine":    "QTAIM",
+        "extra":     ["Spacing 0.1"],
+    },
+    "cdft": {
+        "run_dir":   "run_scripts/cdft",
+        "out_dir":   "amsoutput/cdft",
+        "partition": "court",
+        "engine":    "ConceptualDFT",
+        "extra":     [],
+    },
+}
 
 def find_successful_steps(cursor):
     where = " OR ".join(f"comment_{v} IS NULL" for v in VARIANTS)
@@ -82,10 +61,6 @@ def find_run_file(basename):
             return path
     return None
 
-def find_qtaim_output(basename):
-    path = os.path.join(QTAIM_OUT, f"{basename}.out")
-    return path if os.path.exists(path) else None
-
 def extract_atoms_block(run_file):
     """Return raw atom lines (with original indentation) from System/Atoms."""
     lines = []
@@ -118,7 +93,7 @@ def get_h_indices(cursor, n_step):
                     hs.add(r[0])
     return sorted(hs)
 
-def write_qtaim_run(out_path, basename, atoms, h_indices):
+def write_property_run(out_path, basename, atoms, h_indices, cfg):
     with open(out_path, "w") as f:
         f.write("#!/bin/sh\n\n")
         f.write(f"export AMS_JOBNAME={basename}\n")
@@ -131,7 +106,7 @@ def write_qtaim_run(out_path, basename, atoms, h_indices):
         f.write("End\n\n")
         f.write("Task SinglePoint\n\n")
         f.write("Engine ADF\n")
-        f.write(f"  title {basename}_qtaim\n")
+        f.write(f"  title {basename}_{cfg['name']}\n")
         f.write("  NumericalQuality Excellent\n")
         f.write("  Basis\n")
         f.write("    Type TZ2P\n")
@@ -144,28 +119,18 @@ def write_qtaim_run(out_path, basename, atoms, h_indices):
         f.write("  Relativity\n")
         f.write("    Level None\n")
         f.write("  End\n")
-        f.write("  QTAIM\n")
+        f.write(f"  {cfg['engine']}\n")
         f.write("    AnalysisLevel Full\n")
-        f.write("    Spacing 0.1\n")
+        for line in cfg["extra"]:
+            f.write(f"    {line}\n")
         f.write("    AtomsToDo " + " ".join(str(h) for h in h_indices) + "\n")
         f.write("  End\n")
         f.write("EndEngine\n")
         f.write("eor\n")
 
-def write_sl(out_path, basename, n_step):
-    jobname = f"qtaim{n_step}"
-    with open(out_path, "w") as f:
-        f.write(SL_TEMPLATE.format(
-            jobname=jobname,
-            case=basename,
-            partition=PARTITION,
-            walltime=WALLTIME,
-        ))
-
-# ── main ──────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
-    os.makedirs(QTAIM_DIR, exist_ok=True)
+    for cfg in ANALYSES.values():
+        os.makedirs(cfg["run_dir"], exist_ok=True)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -174,22 +139,24 @@ if __name__ == "__main__":
 
     for n_step in steps:
         basename = f"MDStep{n_step}_cluster"
-        if find_qtaim_output(basename) is not None:
-            continue
 
         src = find_run_file(basename)
         if src is None:
             continue
-
         h_indices = get_h_indices(cursor, n_step)
         if not h_indices:
             continue
-
-        run_path = os.path.join(QTAIM_DIR, f"{basename}.run")
-        sl_path  = os.path.join(QTAIM_DIR, f"{basename}.sl")
         atoms = extract_atoms_block(src)
-        write_qtaim_run(run_path, basename, atoms, h_indices)
-        write_sl(sl_path, basename, n_step)
+
+        for name, cfg in ANALYSES.items():
+            cfg = {**cfg, "name": name}
+            if os.path.exists(os.path.join(cfg["out_dir"], f"{basename}.out")):
+                continue
+            run_path = os.path.join(cfg["run_dir"], f"{basename}.run")
+            sl_path  = os.path.join(cfg["run_dir"], f"{basename}.sl")
+            write_property_run(run_path, basename, atoms, h_indices, cfg)
+            with open(sl_path, "w") as f:
+                f.write(slurm_script(f"{name}{n_step}", basename, cfg["partition"]))
 
     conn.close()
 
