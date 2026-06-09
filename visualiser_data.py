@@ -19,10 +19,10 @@ DB_PATH  = "nmr_jcoupling.db"
 
 # (variant, label, color)
 VARIANTS = [
-    ("TZ2P_FC",   "TZ2P ",  "steelblue"),
-    ("TZ2P_all",  "TZ2P ",  "deepskyblue"),
-    ("TZ2PJ_FC",  "TZ2PJ",  "darkorange"),
-    ("TZ2PJ_all", "TZ2PJ",  "crimson"),
+    ("TZ2P_FC",   "TZ2P FC",  "steelblue"),
+    ("TZ2P_all",  "TZ2P   ",  "deepskyblue"),
+    ("TZ2PJ_FC",  "TZ2PJ FC",  "darkorange"),
+    ("TZ2PJ_all", "TZ2PJ   ",  "crimson"),
 ]
 
 # experimental values
@@ -179,7 +179,7 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None, gmm_p
                 # text uses GMM mean ± ci95, placed above the curve
                 txt = f"{pm:.2f}\u00b1{pci:.2f}"
                 ax.text(pm, y_at_pm + ymax*0.03, txt,
-                        ha="center", va="bottom", fontsize=7, color=color)
+                        ha="center", va="bottom", fontsize=12, color=color)
 
     ax.set_xlabel("J coupling (Hz)")
     ax.set_ylabel("Relative frequency")
@@ -190,13 +190,13 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None, gmm_p
 
     if TRANSPARENT:
         leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=False,
-                        prop={"family": "monospace", "size": 9})
+                        prop={"family": "monospace", "size": 12})
         leg.get_frame().set_facecolor("none")
         leg.get_frame().set_edgecolor("none")
         leg.get_frame().set_alpha(0)
     else:
         leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=True,
-                        prop={"family": "monospace", "size": 9})
+                        prop={"family": "monospace", "size": 12})
         frame = leg.get_frame()
         frame.set_facecolor((1.0, 1.0, 1.0, 1.0))
         frame.set_edgecolor(LETTER_COLOUR)

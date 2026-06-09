@@ -2,6 +2,7 @@
 import os
 import glob
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 
 from hassan_functions.finders import find_adjacent_xh_pair_anchored
@@ -63,16 +64,33 @@ q_O = np.array(q_Oside)
 print(f"q (CH2 near N+): n={len(q_N)}, mean={q_N.mean():.6f}, std={q_N.std():.6f}")
 print(f"q (CH2 near O ): n={len(q_O)}, mean={q_O.mean():.6f}, std={q_O.std():.6f}")
 
+plt.rcParams['font.size']       = 16
+plt.rcParams['axes.titlesize']  = 19
+plt.rcParams['axes.labelsize']  = 16
+plt.rcParams['xtick.labelsize'] = 14
+plt.rcParams['ytick.labelsize'] = 14
+plt.rcParams['legend.fontsize'] = 14
+
 fig, ax = plt.subplots(figsize=(8, 5))
-ax.hist(q_Nside, bins=20, color="steelblue", edgecolor="black", alpha=0.6,
-        label=f"CH2 near N+ (n={len(q_Nside)})")
-ax.hist(q_Oside, bins=20, color="crimson", edgecolor="black", alpha=0.6,
-        label=f"CH2 near O  (n={len(q_Oside)})")
-ax.set_title("QTAIM net charge of H in CH2")
-ax.set_xlabel("q (au)")
-ax.set_ylabel("count")
-ax.legend()
-ax.grid(alpha=0.3)
+fig.patch.set_alpha(0.0)
+ax.patch.set_alpha(0.0)
+
+ax.hist(q_Nside, bins=40, color="seagreen", edgecolor="white", alpha=0.5,
+        density=True, label="CH2-N")
+ax.hist(q_Oside, bins=40, color="mediumpurple", edgecolor="white", alpha=0.5,
+        density=True, label="CH2-O")
+
+sns.kdeplot(q_Nside, ax=ax, color="seagreen",     linewidth=2)
+sns.kdeplot(q_Oside, ax=ax, color="mediumpurple", linewidth=2)
+
+ax.set_xlim(-0.12, 0.12)
+ax.set_title("QTAIM charge", color="white")
+ax.set_xlabel("q (au)",      color="white")
+ax.set_ylabel("density",     color="white")
+ax.tick_params(colors="white")
+for spine in ax.spines.values():
+    spine.set_edgecolor("white")
+ax.legend(facecolor="none", edgecolor="white", labelcolor="white")
 fig.tight_layout()
-plt.show()
+plt.savefig("plots/qtaim_charges.pdf", transparent=True)
 
