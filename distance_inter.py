@@ -174,8 +174,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
         ax.set_ylabel("density")
         ax.legend()
         style_axes(ax, LETTER_COLOUR)
+    ymax = axes[0].get_ylim()[1]
+    axes[0].set_ylim(0, ymax*1.15)
+    ymax = axes[1].get_ylim()[1]
+    axes[1].set_ylim(0, ymax*1.15)
     ymax = axes[2].get_ylim()[1]
-    axes[2].set_ylim(0, ymax*1.1)
+    axes[2].set_ylim(0, ymax*1.15)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/distance_inter_urea_OH{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)
@@ -190,16 +194,20 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
          mlabel(r"N(urea)$-$H",               inter_Nu_dbl),       "seagreen",  LETTER_COLOUR)
     hist(axes[2], inter_HN_dbl,
          mlabel(r"H(NH$_2$)$-$H",             inter_HN_dbl),       "darkorange", LETTER_COLOUR)
-    axes[0].set_title(rf"Inter $\cdot$ O(urea)$-$[H(CH$_2$N) \& H(OH)] double bridge") # rf"[CH2N {THR_OU_HCH2N} \AA, OH {THR_OU_HOH} \AA]")
-    axes[1].set_title(r"Inter $\cdot$ N(urea)$-$H double bridge")
-    axes[2].set_title(r"Inter $\cdot$ H(NH$_2$)$-$H double bridge")
+    axes[0].set_title(rf"O(urea)$-$[H(CH$_2$N) \& H(OH)]") # rf"[CH2N {THR_OU_HCH2N} \AA, OH {THR_OU_HOH} \AA]")
+    axes[1].set_title(r"N(urea)$-$H")
+    axes[2].set_title(r"H(NH$_2$)$-$H")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
         ax.legend()
         style_axes(ax, LETTER_COLOUR)
+    ymax = axes[0].get_ylim()[1]
+    axes[0].set_ylim(0, ymax*1.3)
+    ymax = axes[1].get_ylim()[1]
+    axes[1].set_ylim(0, ymax*1.2)
     ymax = axes[2].get_ylim()[1]
-    axes[2].set_ylim(0, ymax*1.1)
+    axes[2].set_ylim(0, ymax*1.15)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/distance_inter_urea_double{SUFFIX}.pdf", transparent=TRANSPARENT)
     plt.close(fig)

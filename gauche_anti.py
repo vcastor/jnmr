@@ -81,7 +81,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     ax.set_xlabel(r'$|\phi|$ (rad)')
     ax.set_ylabel('density')
     ax.set_title(r'N–CH$_2$–CH$_2$–O dihedral angle')
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=14)
     style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/gauche_anti{SUFFIX}.pdf", transparent=TRANSPARENT)
