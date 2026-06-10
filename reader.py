@@ -15,6 +15,10 @@ CDFT_DIR   = "amsoutput/cdft"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
 
+# Extra DI/chi terms stored on the intra CH2-CH2 rows (H_pert/H_resp on carbons
+# C_pert/C_resp; p=pert, r=resp): the 4 HC terms + the C-C term.
+INTRA_TERMS = ["HpCp", "HpCr", "HrCp", "HrCr", "CpCr"]
+
 # ── SCF convergence warnings ────────────────────────────────────────────────
 
 def mark_warnings(cursor):
@@ -119,18 +123,32 @@ def step_tables(cursor):
         "AND (name GLOB 'step_*_intra' OR name GLOB 'step_*_inter')")
     return [row[0] for row in cursor.fetchall()]
 
-def update_matrix_for_step(conn, nstep, atom_labels, matrix, col):
-    idx_of = {atom: i for i, atom in enumerate(atom_labels)}
-    for kind in ("intra", "inter"):
-        table = f"step_{nstep}_{kind}"
-        rows = conn.execute(f"SELECT id, H_pert, H_resp FROM {table}").fetchall()
-        for rid, h_pert, h_resp in rows:
-            val = float(matrix[idx_of[h_pert], idx_of[h_resp]])
-            conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (val, rid))
+def update_matrix_for_step(conn, nstep, atom_labels, matrix, prop):
+    idx = {atom: i for i, atom in enumerate(atom_labels)}
+    def v(a, b):
+        return float(matrix[idx[a], idx[b]])
+
+    # inter: only the H_pert-H_resp term
+    inter = f"step_{nstep}_inter"
+    for rid, hp, hr in conn.execute(
+            f"SELECT id, H_pert, H_resp FROM {inter}").fetchall():
+        conn.execute(f"UPDATE {inter} SET {prop} = ? WHERE id = ?", (v(hp, hr), rid))
+
+    # intra: H_pert-H_resp + the 4 HC terms + the C-C term
+    intra = f"step_{nstep}_intra"
+    for rid, hp, hr, cp, cr in conn.execute(
+            f"SELECT id, H_pert, H_resp, C_pert, C_resp FROM {intra}").fetchall():
+        conn.execute(
+            f"UPDATE {intra} SET {prop} = ?, {prop}_HpCp = ?, {prop}_HpCr = ?, "
+            f"{prop}_HrCp = ?, {prop}_HrCr = ?, {prop}_CpCr = ? WHERE id = ?",
+            (v(hp, hr), v(hp, cp), v(hp, cr), v(hr, cp), v(hr, cr), v(cp, cr), rid))
 
 def fill_di_chi(conn, cursor):
     for table in step_tables(cursor):
-        for col in ("DI", "chi"):
+        cols = ["DI", "chi"]
+        if table.endswith("_intra"):
+            cols += [f"{p}_{t}" for p in ("DI", "chi") for t in INTRA_TERMS]
+        for col in cols:
             if not column_exists(cursor, table, col):
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
     conn.commit()

@@ -2,11 +2,11 @@
 def find_atoms(mol, symbol):
     return [at for at in mol.atoms if at.symbol == symbol]
 
-def find_xh_groups(mol, x, n_h, neighbour_symbol=None, return_indices=False):
+def find_xh_groups(mol, x, n_h, neighbour=None, return_indices=False):
     """[(X, [H, ...]), ...] for every X with exactly n_h H neighbours.
 
-    neighbour_symbol: if set, keep only Xs also bonded to that symbol.
-    return_indices:   return mol.atoms indices instead of Atom objects.
+    neighbour:      if set, keep only Xs also bonded to that symbol.
+    return_indices: return mol.atoms indices instead of Atom objects.
     """
     out = []
     for x_at in mol.atoms:
@@ -16,7 +16,7 @@ def find_xh_groups(mol, x, n_h, neighbour_symbol=None, return_indices=False):
         hs   = [n for n in nbrs if n.symbol == 'H']
         if len(hs) != n_h:
             continue
-        if neighbour_symbol is not None and not any(n.symbol == neighbour_symbol for n in nbrs):
+        if neighbour is not None and not any(n.symbol == neighbour for n in nbrs):
             continue
         if return_indices:
             out.append((mol.atoms.index(x_at),
