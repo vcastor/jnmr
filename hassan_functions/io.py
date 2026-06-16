@@ -37,16 +37,14 @@ def read_labeled_matrix(path, header):
         lines = f.readlines()
     start = next(i for i, l in enumerate(lines) if header in l) + 3
 
-    atom_labels = []
-    rows = []
-    i = start
+    atom_labels = []; rows = []; i = start
     while i < len(lines):
         m = re.match(r"\s*(\d+)\s+\w+\s*:(.*)$", lines[i])
         if m is None:
             break
         atom_labels.append(int(m.group(1)))
         nvals = len(atom_labels)
-        vals = [float(x) for x in m.group(2).split()]
+        vals  = [float(x) for x in m.group(2).split()]
         i += 1
         while len(vals) < nvals:
             vals.extend(float(x) for x in lines[i].split())
@@ -77,3 +75,4 @@ def read_qtaim_charges(path):
             break
         charges[int(parts[0])] = float(parts[4])
     return charges
+

@@ -14,6 +14,7 @@ QTAIM_DIR  = "amsoutput/qtaim"
 CDFT_DIR   = "amsoutput/cdft"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
+GRID_WARNING = "WARNING: Nr of shared arrays in use at the end"
 
 INTRA_TERMS = ["HpHr", "HpCp", "HpCr", "CpCr", "HrCp", "HrCr"]
 INTER_TERMS = ["HpHr"]
@@ -94,10 +95,10 @@ def fill_j(conn, cursor):
             filepath = os.path.join(f"amsoutput/{variant}", filename)
             j_col    = f"J_{variant}"
 
-            if not os.path.exists(filepath):
-                continue
             if (check_jcolumn_filled(cursor, f"step_{n_step}_intra", j_col)
                     and check_jcolumn_filled(cursor, f"step_{n_step}_inter", j_col)):
+                continue
+            if not os.path.exists(filepath):
                 continue
 
             for suffix in ("intra", "inter"):
@@ -105,13 +106,13 @@ def fill_j(conn, cursor):
                 if not table_exists(cursor, table):
                     continue
                 cursor.execute(
-                    f"SELECT id, H_pert, H_resp FROM {table} WHERE {j_col} IS NULL")
-                for row_id, h_pert, h_resp in cursor.fetchall():
+                    f"SELECT H_pert, H_resp FROM {table} WHERE {j_col} IS NULL")
+                for h_pert, h_resp in cursor.fetchall():
                     j_value = find_j_value(filepath, h_pert, h_resp)
                     if j_value is not None:
                         cursor.execute(
-                            f"UPDATE {table} SET {j_col} = ? WHERE id = ?",
-                            (j_value, row_id))
+                            f"UPDATE {table} SET {j_col} = ? WHERE H_pert = ? AND H_resp = ?",
+                            (j_value, h_pert, h_resp))
             conn.commit()
 
 # ── QTAIM (DI) and CDFT (\chi) ───────────────────────────────────────────────────
@@ -148,6 +149,26 @@ def update_matrix_for_step(conn, nstep, atom_labels, matrix, prop):
                 f"{prop}_CpCr = ?, {prop}_HrCp = ?, {prop}_HrCr = ? WHERE id = ?",
                 (v(hp, hr), v(hp, cp), v(hp, cr), v(cp, cr), v(hr, cp), v(hr, cr), rid))
 
+def check_output_ok(path):
+    if subprocess.run(["grep", "-qF", GRID_WARNING, path]).returncode == 0:
+        print(f"  grid warning: {os.path.basename(path)}")
+        return False
+    return subprocess.run(["grep", "-qF", "NORMAL TERMINATION", path]).returncode == 0
+
+def _step_needs_prop(cursor, nstep, prop):
+    for suffix in ("intra", "inter"):
+        table = f"step_{nstep}_{suffix}"
+        if not table_exists(cursor, table):
+            continue
+        terms = INTRA_TERMS if suffix == "intra" else INTER_TERMS
+        for col in [f"{prop}_{t}" for t in terms]:
+            if not column_exists(cursor, table, col):
+                return True
+            cursor.execute(f"SELECT 1 FROM {table} WHERE {col} IS NULL LIMIT 1")
+            if cursor.fetchone() is not None:
+                return True
+    return False
+
 def fill_di_chi(conn, cursor):
     for table in step_tables(cursor):
         terms = INTRA_TERMS if table.endswith("_intra") else INTER_TERMS
@@ -158,11 +179,19 @@ def fill_di_chi(conn, cursor):
 
     for path in sorted(glob.glob(os.path.join(QTAIM_DIR, "*.out"))):
         nstep = get_step_from_filename(path)
+        if not _step_needs_prop(cursor, nstep, "DI"):
+            continue
+        if not check_output_ok(path):
+            continue
         atom_labels, di = read_labeled_matrix(path, DI_HEADER)
         update_matrix_for_step(conn, nstep, atom_labels, di, "DI")
 
     for path in sorted(glob.glob(os.path.join(CDFT_DIR, "*.out"))):
         nstep = get_step_from_filename(path)
+        if not _step_needs_prop(cursor, nstep, "chi"):
+            continue
+        if not check_output_ok(path):
+            continue
         atom_labels, chi = read_labeled_matrix(path, CHI_HEADER)
         update_matrix_for_step(conn, nstep, atom_labels, chi, "chi")
 
