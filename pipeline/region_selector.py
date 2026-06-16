@@ -1,3 +1,4 @@
+#!$AMSBIN/plams
 import os
 import sys
 import numpy as np
@@ -11,11 +12,15 @@ def closer_to_origin(coords: np.ndarray) -> np.ndarray:
     min_index = np.argmin(distances)
     return coords[min_index]
 
-def atoms_inner_radius(radius: float, centre: np.ndarray, coords: np.ndarray) -> List[int]:
+def atoms_inner_radius(radius: float,
+                       centre: np.ndarray,
+                       coords: np.ndarray) -> List[int]:
     distances = np.linalg.norm(coords - centre, axis=1)
     return np.where(distances < radius)[0].tolist()
 
-def molecules_inner_radius(molecule_indices: List[List[int]], atoms_in: List[int]) -> List[int]:
+def molecules_inner_radius(
+        molecule_indices: List[List[int]],
+        atoms_in: List[int]) -> List[int]:
     """Return indices of molecules containing any atom from atoms_in."""
     atoms_in_set = set(atoms_in)
     selected = []
@@ -24,7 +29,10 @@ def molecules_inner_radius(molecule_indices: List[List[int]], atoms_in: List[int
             selected.append(mol_idx)
     return selected
 
-def check_solution_ratio(molecules: List['Molecule'], target_ratio: tuple, centre: np.ndarray) -> List['Molecule']:
+def check_solution_ratio(
+        molecules: List['Molecule'],
+        target_ratio: tuple,
+        centre: np.ndarray) -> List['Molecule']:
     """
     Balance molecules to match target_ratio (urea : choline_chloride).
     Removes molecules farthest from centre first.
@@ -78,7 +86,10 @@ def check_solution_ratio(molecules: List['Molecule'], target_ratio: tuple, centr
     filtered = [m for m, _ in urea + choline + chloride]
     return filtered
 
-def write_molecules_xyz(molecules: List['Molecule'], filename: str, comment: str = "") -> None:
+def write_molecules_xyz(
+        molecules: List['Molecule'],
+        filename: str,
+        comment: str = "") -> None:
     total_atoms = sum(len(mol) for mol in molecules)
     with open(filename, 'w') as f:
         f.write(f"{total_atoms}\n")

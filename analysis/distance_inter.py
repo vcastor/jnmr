@@ -2,10 +2,10 @@
 import os
 import glob
 import matplotlib.pyplot as plt
-
-from hassan_functions.geometry import distance
-from hassan_functions.finders import find_xh_groups, find_adjacent_xh_pair_anchored
-from hassan_functions.plotting import PLOT_STYLES, hist, mlabel, stats, style_axes
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hassan_functions.geometry  import distance
+from hassan_functions.finders   import find_xh_groups, find_adjacent_xh_pair_anchored
+from hassan_functions.plotting  import PLOT_STYLES, hist, mlabel, stats, style_axes
 from hassan_functions.constants import FORMULAS
 
 PLOT_DIR     = "plots"
@@ -51,7 +51,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     cluster = Molecule(xf)
     cluster.guess_bonds()
-    mols = cluster.separate()
+    mols    = cluster.separate()
 
     ureas    = [m for m in mols if m.get_formula() == FORMULAS['urea']]
     cholines = [m for m in mols if m.get_formula() == FORMULAS['choline']]

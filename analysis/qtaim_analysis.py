@@ -1,16 +1,18 @@
 #!$AMSBIN/plams
 import os
+import sys
 import glob
-from collections import defaultdict
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from hassan_functions.geometry import distance
-from hassan_functions.finders import find_xh_groups, find_adjacent_xh_pair_anchored
-from hassan_functions.ordering import classify_sort, compute_offsets
-from hassan_functions.io import read_qtaim_charges
+from collections import defaultdict
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hassan_functions.geometry  import distance
+from hassan_functions.finders   import find_xh_groups, find_adjacent_xh_pair_anchored
+from hassan_functions.ordering  import classify_sort, compute_offsets
+from hassan_functions.io        import read_qtaim_charges
 from hassan_functions.constants import FORMULAS
-from hassan_functions.plotting import PLOT_STYLES, style_axes
+from hassan_functions.plotting  import PLOT_STYLES, style_axes
 
 plt.rcParams['font.size']       = 16
 plt.rcParams['axes.titlesize']  = 19
@@ -20,7 +22,8 @@ plt.rcParams['ytick.labelsize'] = 14
 plt.rcParams['legend.fontsize'] = 14
 
 CLUSTERS_DIR = "clusters"
-QTAIM_DIR    = "amsoutput/qtaim"
+QTAIM_DIR    = "/Users/vcastor/Desktop/backup_qtaimcdft/qtaim" #tmp
+# QTAIM_DIR    = "amsoutput/qtaim"
 PLOT_DIR     = "plots"
 BP_HEADER    = "BOND PATHS (BP) AND PROPERTIES ALONG THEM ARE WRITTEN TO TAPE21"
 SPECIES      = ['urea', 'choline', 'chloride']
@@ -57,7 +60,6 @@ def read_bcps(path):
     return bcps
 
 def poincare_hopf_ok(path):
-    """True if the QTAIM output reports the Poincare-Hopf relationship satisfied."""
     with open(path) as f:
         return "Poincare-Hopf satisfied" in f.read()
 
@@ -351,8 +353,7 @@ if n_bcp_sig:
             print(f"  {label+':':<31}{n}/{n_bcp}  ({100*n/n_bcp:.1f}%)")
 
 print()
-q_N = np.array(q_Nside)
-q_O = np.array(q_Oside)
+q_N = np.array(q_Nside); q_O = np.array(q_Oside)
 print(f"q (CH2 near N+): n={len(q_N)}, mean={q_N.mean():.6f}, std={q_N.std():.6f}")
 print(f"q (CH2 near O ): n={len(q_O)}, mean={q_O.mean():.6f}, std={q_O.std():.6f}")
 print()
@@ -380,7 +381,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
                            edgecolor='black', linewidth=0.3, label=ylabel)
         ax.set_title(title)
         ax.set_xlabel("distance (Å)")
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=14)
         ax.grid(alpha=0.3)
         style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()

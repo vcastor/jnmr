@@ -1,18 +1,19 @@
 #!$AMSBIN/plams
 import os
+import sys
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.mixture import GaussianMixture
-
-from hassan_functions.geometry import distance, dihedral
-from hassan_functions.finders import find_xh_bonds, find_adjacent_xh_pair_anchored
-from hassan_functions.plotting import PLOT_STYLES, hist, mlabel, stats, style_axes, style_cbar
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hassan_functions.geometry  import distance, dihedral
+from hassan_functions.finders   import find_xh_bonds, find_adjacent_xh_pair_anchored
+from hassan_functions.plotting  import PLOT_STYLES, hist, mlabel, stats, style_axes, style_cbar
 from hassan_functions.constants import FORMULAS
 
 PLOT_DIR         = "plots"
 CLUSTERS_DIR     = "clusters"
-GAUCHE_THRESHOLD = 2*np.pi / 3   # rad (~120°)
+GAUCHE_THRESHOLD = 2*np.pi/3
 
 plt.rcParams['text.usetex'] = True
 plt.rcParams['text.latex.preamble'] = r'\usepackage{xfrac}\usepackage{amsmath}'
@@ -29,7 +30,7 @@ intra_HH      = []
 intra_HH_dih  = []
 intra_CH_N    = []
 intra_CH_O    = []
-dihedrals     = []   # |N-CH2-CH2-O| in rad
+dihedrals     = []
 
 init()
 
@@ -39,7 +40,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     cluster = Molecule(xf)
     cluster.guess_bonds()
-    mols = cluster.separate()
+    mols    = cluster.separate()
 
     ureas    = [m for m in mols if m.get_formula() == FORMULAS['urea']]
     cholines = [m for m in mols if m.get_formula() == FORMULAS['choline']]
@@ -73,10 +74,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 finish()
 
 # ── stats ─────────────────────────────────────────────────────────────────
-nh_arr  = np.array(intra_NH)
-ch_arr  = np.array(intra_CH_urea)
-d_arr   = np.array(dihedrals)
-n_tot   = len(d_arr)
+nh_arr   = np.array(intra_NH)
+ch_arr   = np.array(intra_CH_urea)
+d_arr    = np.array(dihedrals)
+n_tot    = len(d_arr)
 n_gauche = int(np.sum(d_arr <= GAUCHE_THRESHOLD))
 n_anti   = n_tot - n_gauche
 

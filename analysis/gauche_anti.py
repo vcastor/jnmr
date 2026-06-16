@@ -1,18 +1,20 @@
 #!$AMSBIN/plams
 import os
+import sys
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-from hassan_functions.geometry import dihedral
-from hassan_functions.finders import find_adjacent_xh_pair_anchored
-from hassan_functions.ordering import classify_sort, compute_offsets
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from hassan_functions.geometry  import dihedral
+from hassan_functions.finders   import find_adjacent_xh_pair_anchored
+from hassan_functions.ordering  import classify_sort, compute_offsets
 from hassan_functions.constants import FORMULAS
-from hassan_functions.plotting import PLOT_STYLES, hist, style_axes
+from hassan_functions.plotting  import PLOT_STYLES, hist, style_axes
 
 CLUSTERS_DIR     = "clusters"
 PLOT_DIR         = "plots"
 SPECIES          = ['urea', 'choline', 'chloride']
-GAUCHE_THRESHOLD = 2*np.pi / 3   # rad  (~120°)
+GAUCHE_THRESHOLD = 2*np.pi/3
 
 
 def ncco_dihedral(ch):
@@ -26,9 +28,7 @@ def ncco_dihedral(ch):
         return None
     return dihedral(n_at, c1, c2, o_at)
 
-
-dihedrals      = []
-n_systems_used = 0
+dihedrals = []; n_systems_used = 0
 
 init()
 
@@ -69,7 +69,7 @@ ticklabels = [r'$0$', r'$\pi/3$', r'$2\pi/3$', r'$\pi$']
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, ax = plt.subplots(figsize=(7, 4))
-
+    # colour tomato 🍅
     ax.axvspan(0, GAUCHE_THRESHOLD, alpha=0.12, color='steelblue', label='gauche')
     ax.axvspan(GAUCHE_THRESHOLD, np.pi, alpha=0.12, color='tomato', label='anti')
 

@@ -1,12 +1,21 @@
 #!/usr/bin/python3
+import os
+import sys
 import sqlite3
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
 plt.rcParams["text.usetex"]         = True
 plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
+plt.rcParams['font.size']       = 18
+plt.rcParams['axes.titlesize']  = 20
+plt.rcParams['axes.labelsize']  = 18
+plt.rcParams['xtick.labelsize'] = 16
+plt.rcParams['ytick.labelsize'] = 16
+plt.rcParams['legend.fontsize'] = 16
 
 PLOT_DIR = "plots"
 DB_PATH  = "nmr_jcoupling.db"
@@ -130,19 +139,20 @@ ctc     = np.cos(tc)
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.scatter(data["dihedral"], js, alpha=0.25, s=10, color="tab:gray",
+    ax.scatter(data["dihedral"], js, alpha=0.25, s=10, color=LETTER_COLOUR,
                label="data")
-    ax.plot(tc, a + b*ctc + g*ctc*ctc, color="tab:green", linewidth=2,
+    ax.plot(tc, a + b*ctc + g*ctc*ctc, color="orange", linewidth=2,
             label=fr"Karplus (RMSE {karplus[2]:.2f} Hz)")
     ax.set_xlabel(r"$\vert$H-C-C-H$\vert$ dihedral angle (rad)")
-    ax.set_ylabel(r"$\vert J\vert$ (Hz)")
-    ax.set_title(r"Pure Karplus fit, " + VARIANT.replace("_", r"\_"))
+    ax.set_ylabel(r"$J$ (Hz)")
+    ax.set_title(r"Karplus Fit")
     ax.set_xlim(0, np.pi)
     ax.set_xticks(xticks)
     ax.set_xticklabels(xlabels)
-    ax.legend(loc="best", fontsize=9)
+    ax.legend(loc="best", fontsize=16)
     style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()
     fig.savefig(f"{PLOT_DIR}/karplus_fit_{VARIANT}{SUFFIX}.pdf",
                 transparent=TRANSPARENT)
     plt.close(fig)
+
