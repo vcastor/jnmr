@@ -21,15 +21,22 @@ DB_PATH  = "nmr_jcoupling.db"
 VARIANT  = "TZ2P_FC"
 J_COL    = f"J_{VARIANT}"
 RNG      = 69
-N_SPLITS = 5                   # 10 random splits -> averaged MAE/RMSE
-N_JOBS   = 10                  # cap at 10 cores, other jobs are running
+N_SPLITS = 5
+N_JOBS   = -1                  # all available cores; 64 procs on the main compute node
+
+GEOM      = ["dihedral", "angle_hcc", "angle_cch", "distance"]
+DI_TERMS  = [f"DI_{t}"  for t in ["HpHr", "HpCp", "HpCr", "CpCr", "HrCp", "HrCr"]]
+CHI_TERMS = [f"chi_{t}" for t in ["HpHr", "HpCp", "HpCr", "CpCr", "HrCp", "HrCr"]]
 
 CONFIGS = {
-    "phi":         ["dihedral"],
-    "geom":        ["dihedral", "angle_hcc", "angle_cch", "distance"],
-    "geom_DI":     ["dihedral", "angle_hcc", "angle_cch", "distance", "DI"],
-    "geom_chi":    ["dihedral", "angle_hcc", "angle_cch", "distance", "chi"],
-    "geom_DI_chi": ["dihedral", "angle_hcc", "angle_cch", "distance", "DI", "chi"],
+    "phi":              ["dihedral"],
+    "geom":             GEOM,
+    "geom_DI_HpHr":     GEOM + ["DI_HpHr"],
+    "geom_chi_HpHr":    GEOM + ["chi_HpHr"],
+    "geom_DI_chi_HpHr": GEOM + ["DI_HpHr", "chi_HpHr"],
+    "geom_DI_all":      GEOM + DI_TERMS,
+    "geom_chi_all":     GEOM + CHI_TERMS,
+    "geom_DI_chi_all":  GEOM + DI_TERMS + CHI_TERMS,
 }
 DESCRIPTORS = sorted({c for cols in CONFIGS.values() for c in cols})
 
