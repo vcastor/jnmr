@@ -15,14 +15,14 @@ ANALYSES = {
     "qtaim": {
         "run_dir":   "run_scripts/qtaim",
         "out_dir":   "amsoutput/qtaim",
-        "partition": "court",
+        "partition": "long",
         "engine":    "QTAIM",
         "extra":     ["Spacing 0.1"],
     },
     "cdft": {
         "run_dir":   "run_scripts/cdft",
         "out_dir":   "amsoutput/cdft",
-        "partition": "court",
+        "partition": "long",
         "engine":    "ConceptualDFT",
         "extra":     [],
     },
