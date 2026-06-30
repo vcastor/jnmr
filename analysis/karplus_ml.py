@@ -3,14 +3,17 @@ import os
 import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.ensemble        import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble        import (RandomForestRegressor, RandomForestClassifier,
+                                     GradientBoostingRegressor)
 from sklearn.svm             import SVR
 from sklearn.kernel_ridge    import KernelRidge
 from sklearn.gaussian_process         import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
+from sklearn.mixture         import GaussianMixture
 from sklearn.preprocessing   import StandardScaler
 from sklearn.pipeline        import Pipeline
-from sklearn.model_selection import KFold, cross_validate, cross_val_predict
+from sklearn.base            import BaseEstimator, RegressorMixin, clone
+from sklearn.model_selection import StratifiedGroupKFold, cross_val_predict
 from hassan_functions.plotting import PLOT_STYLES, style_axes
 
 plt.rcParams["text.usetex"]         = True
@@ -57,14 +60,52 @@ def flag_outliers(vals):
     z = 0.6745*(vals - med)/mad
     return [i for i in range(vals.size) if abs(z[i]) > 3.5], med
 
+def mode_threshold(y):
+    # |J| is bimodal (Karplus cos^2): density valley between the two modes
+    gm     = GaussianMixture(n_components=2, random_state=RNG).fit(y.reshape(-1, 1))
+    lo, hi = sorted(gm.means_.ravel())
+    grid   = np.linspace(lo, hi, 200)
+    return float(grid[np.argmin(gm.score_samples(grid.reshape(-1, 1)))])
+
+def mode_splits(yc, gc, thr):
+    # whole snapshots stay on one side (no MD leakage); modes balanced too
+    strata = (yc >= thr).astype(int)
+    sgkf   = StratifiedGroupKFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
+    return list(sgkf.split(yc, strata, groups=gc))
+
+class ModeSplitRegressor(BaseEstimator, RegressorMixin):
+    # forced first ML step: gate samples into low/high |J| modes, then one
+    # regressor per mode (mixture of experts with a hard classifier gate)
+    def __init__(self, base=None):
+        self.base = base
+
+    def fit(self, X, y):
+        base       = (self.base if self.base is not None else
+                      RandomForestRegressor(n_estimators=500, random_state=RNG, n_jobs=1))
+        self.thr_  = mode_threshold(y)
+        hi         = y >= self.thr_
+        self.gate_ = RandomForestClassifier(n_estimators=300, random_state=RNG,
+                                            n_jobs=1).fit(X, hi.astype(int))
+        self.lo_   = clone(base).fit(X[~hi], y[~hi])
+        self.hi_   = clone(base).fit(X[hi],  y[hi])
+        return self
+
+    def predict(self, X):
+        hi       = self.gate_.predict(X).astype(bool)
+        out      = np.empty(X.shape[0])
+        out[~hi] = self.lo_.predict(X[~hi])
+        out[hi]  = self.hi_.predict(X[hi])
+        return out
+
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute(f"SELECT n_step FROM snapshots WHERE comment_{VARIANT} IS NULL")
 steps = sorted(r[0] for r in cursor.fetchall())
 
-data = {c: [] for c in DESCRIPTORS}
-js   = []
+data   = {c: [] for c in DESCRIPTORS}
+js     = []
+gsteps = []                    # snapshot id per row; couplings share it within a step
 for n_step in steps:
     t = f"step_{n_step}_intra"
     cursor.execute(
@@ -81,17 +122,19 @@ for n_step in steps:
         for c in DESCRIPTORS:
             data[c].append(vals.get(c))
         js.append(vals[J_COL])
+        gsteps.append(n_step)
 
 conn.close()
 
-data = {c: np.array(v, dtype=float) for c, v in data.items()}   # None -> nan
-y    = np.abs(np.asarray(js, dtype=float))
+data   = {c: np.array(v, dtype=float) for c, v in data.items()}   # None -> nan
+y      = np.abs(np.asarray(js, dtype=float))
+groups = np.asarray(gsteps)
 
 datasets = {}
 for cfg_name, cols in CONFIGS.items():
     X    = np.column_stack([data[c] for c in cols])
     mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
-    datasets[cfg_name] = (X[mask], y[mask])
+    datasets[cfg_name] = (X[mask], y[mask], groups[mask])
 
 kernel = (ConstantKernel(1.0, (1e-3, 1e3))
           *RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e2))
@@ -99,6 +142,8 @@ kernel = (ConstantKernel(1.0, (1e-3, 1e3))
 
 models = {
     "RF":  RandomForestRegressor(n_estimators=500, random_state=RNG, n_jobs=1),
+    "RF-mode": ModeSplitRegressor(
+        base=RandomForestRegressor(n_estimators=500, random_state=RNG, n_jobs=1)),
     "GBR": GradientBoostingRegressor(n_estimators=500, learning_rate=0.05,
                                      max_depth=4, random_state=RNG),
     "SVR": Pipeline([
@@ -118,32 +163,45 @@ models = {
     ]),
 }
 
-cv = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RNG)
+THR        = mode_threshold(y)
+cv_by_cfg  = {cfg: mode_splits(yc, gc, THR) for cfg, (X, yc, gc) in datasets.items()}
 
-print(f"=== {VARIANT}: {N_SPLITS} random splits (KFold shuffle, seed {RNG}), "
-      f"n_jobs={N_JOBS} ===")
+print(f"=== {VARIANT}: {N_SPLITS} snapshot-grouped, mode-stratified splits "
+      f"(seed {RNG}), n_jobs={N_JOBS} ===")
 print(f"target: |{J_COL}|  range {y.min():.4f} -> {y.max():.4f}")
+print(f"{y.size} couplings from {np.unique(groups).size} snapshots "
+      f"(effective sample size is the snapshot count)")
+print(f"|J| mode split at {THR:.4f} Hz: "
+      f"{(y < THR).sum()} low / {(y >= THR).sum()} high")
 
 mae_mean = {}
-flagged  = []                  # (cfg, model, fold, mae, median)
-for cfg_name, (X, yc) in datasets.items():
+flagged  = []                  # (cfg, model, fold, mae, se, median)
+preds    = {}                  # cfg -> {model -> out-of-fold predictions}, reused for parity
+for cfg_name, (X, yc, gc) in datasets.items():
+    cv = cv_by_cfg[cfg_name]
+    fold = np.empty(yc.size, dtype=int)
+    for k, (_, test) in enumerate(cv):
+        fold[test] = k
     print(f"\n--- {cfg_name}: n = {yc.size}, features: {', '.join(CONFIGS[cfg_name])} ---")
     print(f"{'model':<10}{'MAE':>9}{'±std':>9}{'min':>9}{'max':>9}{'RMSE':>9}  outliers")
     mae_mean[cfg_name] = {}
+    preds[cfg_name]    = {}
     for name, model in models.items():
-        sc = cross_validate(model, X, yc, cv=cv,
-                            scoring=("neg_mean_absolute_error",
-                                     "neg_root_mean_squared_error"),
-                            n_jobs=N_JOBS)
-        mae  = -sc["test_neg_mean_absolute_error"]
-        rmse = -sc["test_neg_root_mean_squared_error"]
+        ypred = cross_val_predict(model, X, yc, cv=cv, n_jobs=N_JOBS)
+        preds[cfg_name][name] = ypred
+        res  = np.abs(ypred - yc)
+        # per-fold MAE, its standard error (std of |residuals| / sqrt n), and RMSE
+        mae  = np.array([res[fold == k].mean()                  for k in range(N_SPLITS)])
+        se   = np.array([res[fold == k].std(ddof=1)/np.sqrt((fold == k).sum())
+                         for k in range(N_SPLITS)])
+        rmse = np.array([np.sqrt((res[fold == k]**2).mean())    for k in range(N_SPLITS)])
         mae_mean[cfg_name][name] = mae.mean()
 
         out, med = flag_outliers(mae)
         for i in out:
-            flagged.append((cfg_name, name, i, mae[i], med))
+            flagged.append((cfg_name, name, i, mae[i], se[i], med))
         tag = "" if not out else "  *folds " + ",".join(
-            f"{i}({mae[i]:.2f})" for i in out)
+            f"{i}({mae[i]:.2f}±{se[i]:.2f})" for i in out)
 
         print(f"{name:<10}{mae.mean():>9.4f}{mae.std():>9.4f}"
               f"{mae.min():>9.4f}{mae.max():>9.4f}{rmse.mean():>9.4f}{tag}")
@@ -155,10 +213,11 @@ print(f"\nbest: {best[1]} on '{best[0]}'  MAE = {best[2]:.4f} Hz "
 
 if flagged:
     print(f"\n=== fold-MAE outliers (modified z-score > 3.5 vs the other folds) ===")
-    print(f"{'config':<13}{'model':<10}{'fold':>5}{'MAE':>9}{'median':>9}{'ratio':>8}")
-    for cfg_name, name, fold, mae_v, med in flagged:
-        print(f"{cfg_name:<13}{name:<10}{fold:>5}{mae_v:>9.4f}{med:>9.4f}"
-              f"{mae_v/med:>8.2f}")
+    print(f"{'config':<17}{'model':<10}{'fold':>5}{'MAE':>9}{'±se':>8}"
+          f"{'median':>9}{'ratio':>8}")
+    for cfg_name, name, fold_i, mae_v, se_v, med in flagged:
+        print(f"{cfg_name:<17}{name:<10}{fold_i:>5}{mae_v:>9.4f}{se_v:>8.4f}"
+              f"{med:>9.4f}{mae_v/med:>8.2f}")
 else:
     print("\nno fold-MAE outliers: every split is within trend for all models.")
 
@@ -167,9 +226,8 @@ n_models = len(models)
 ncols    = 3
 nrows    = (n_models + ncols - 1)//ncols
 
-for cfg_name, (X, yc) in datasets.items():
-    predictions = {name: cross_val_predict(model, X, yc, cv=cv, n_jobs=N_JOBS)
-                   for name, model in models.items()}
+for cfg_name, (X, yc, gc) in datasets.items():
+    predictions = preds[cfg_name]
     for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
         fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 4*nrows))
         axes = np.atleast_1d(axes).flatten()

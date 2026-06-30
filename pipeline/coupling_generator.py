@@ -5,7 +5,10 @@ import sqlite3
 import numpy as np
 from itertools import groupby
 from typing import List, Tuple, Dict
-from hassan_functions import *
+from hassan_functions import (distance, classify_sort, compute_offsets,
+                              find_xh_bonds, find_xh_groups, find_adjacent_xh_pairs,
+                              table_exists, column_exists, get_step_from_filename,
+                              slurm_script, VARIANT_SLURM, SCF_WARNINGS, FORMULAS)
 
 SPECIES = ['urea', 'choline', 'chloride']
 DB_PATH = "nmr_jcoupling.db"
