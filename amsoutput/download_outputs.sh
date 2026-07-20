@@ -19,9 +19,8 @@ download_outs() {
 }
 
 download_outs "criann:/home/2026014/vcasto03/nmr_main" \
-  TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all
+  TZ2P_FC TZ2P_all TZ2PJ_FC TZ2PJ_all ch
 
-# add ch after (maybe)
 download_outs "criann:/home/2026014/vcasto03" \
   qtaim cdft
 

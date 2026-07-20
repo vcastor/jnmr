@@ -24,9 +24,10 @@ VARIANTS = [
 DISTANCE_THRESHOLD = 5.0
 
 # C(urea)-H(choline) coupling for small clusters → court partition
-CH_OUT_DIR        = "run_scripts/ch"
-CH_PARTITION      = "court"
-CH_DIST_THRESHOLD = 5.0   # Å from the urea C; keep every choline H within this
+CH_OUT_DIR         = "run_scripts/ch"
+CH_PARTITION       = "long"
+CH_DIST_THRESHOLD  = 5.0   # Å from the urea C; keep every choline H within this
+CH_REQUIRE_VARIANT = "TZ2P_FC"  # only clusters whose H-H (this variant) is already computed
 
 def classify_cluster(xyz):
     """Classify a cluster into SPECIES, tag each atom with its global 1-based
@@ -309,6 +310,11 @@ if os.environ.get("CH"):
         n_step   = get_step_from_filename(xyz_file)
 
         if sum(1 for _ in open(xyz_file)) - 2 < 1:
+            continue
+
+        # only clusters whose H-H is already computed (smallest systems first)
+        if not os.path.exists(os.path.join("amsoutput", CH_REQUIRE_VARIANT,
+                                           f"{basename}.out")):
             continue
 
         ch_run = os.path.join(CH_OUT_DIR, f"{basename}.run")

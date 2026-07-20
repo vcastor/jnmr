@@ -13,3 +13,4 @@ plams_workdir*
 *.DS_Store
 __*__/
 *.pyc
+plots/*
