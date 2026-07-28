@@ -3,7 +3,7 @@
 Snapshots from a Molecular Dynamics simulation of a urea / choline chloride
 Deep Eutectic Solvent are post-processed into small clusters and fed to
 single-point DFT calculations to compute NMR J-couplings.  Geometric and
-qunatum analyses are stored alongside the J values in a SQLite DB and plotted
+quantum analyses are stored alongside the J values in a SQLite DB and plotted
 from there.
 
 ## Requirements
@@ -11,8 +11,10 @@ from there.
 - AMS with PLAMS (`$AMSBIN/plams`)
 - Python 3 with: `numpy`, `matplotlib`, `seaborn`, `scipy`, `scikit-learn`,
   `sqlite3` (stdlib)
-- A LaTeX install for the publication-quality plots
-  (`text.usetex = True`, `xfrac` package)
+- A LaTeX install for the `usetex` plots (`xfrac`, `amsmath`). Plot styling
+  (font sizes, `usetex`, LaTeX preamble) is centralised in
+  `hassan_functions/style.py` via `apply_style(preset)`; the `notex` preset
+  renders without LaTeX.
 
 ## Directory layout
 
@@ -29,6 +31,7 @@ run_scripts/qtaim,cdft/ # generated QTAIM / CDFT scripts
 run_scripts/ch/         # generated C(urea)-H coupling scripts (small clusters)
 pipeline/               # generation scripts (rkf -> xyz -> clusters -> run/.sl + DB)
 analysis/               # analysis / plotting scripts
+analysis/cache/         # pickled PLAMS-compute results (regenerated on data change)
 plots/                  # output figures
 nmr_jcoupling.db        # SQLite database (see init_db.py for schema)
 hassan_functions/       # shared library, see below
@@ -42,8 +45,10 @@ All commands are run from the repo root.
 init_db.py      # one-shot: create the DB schema (run once)
 ./generate.sh   # download new .rkf from aragorn, then run pipeline/ (below)
 ./criann.sh     # upload .run/.sl, download outputs, then clean + submit on CRIANN
-./reader.py     # parse outputs into the DB: SCF warnings + J + QTAIM (DI) / CDFT (chi)
-./analysis.sh   # run every analysis (plots + reports)
+./reader.py     # parse outputs into the DB (silent): SCF warnings + J(HH) + QTAIM (DI) /
+                # CDFT (chi) + C(urea)-H couplings (each carrying a per-step SCF comment flag)
+./analysis.sh   # run every analysis (plots + reports); regenerates a PLAMS cache only when
+                # its clusters/ input or its script changed, otherwise it just re-plots
 ```
 
 `pipeline/` (generation, run by `generate.sh`):
@@ -59,19 +64,33 @@ populate_geometry.py   # backfill intra dihedral / distance / angle columns
 property_generator.py  # write QTAIM + CDFT .run/.sl files for converged steps
 ```
 
-`analysis/` (run by `analysis.sh`):
+`analysis/` (run by `analysis.sh`). The PLAMS-compute scripts read
+`clusters/*.xyz` and dump `analysis/cache/*.pkl`; the plotters read those caches
+and/or the DB, so tweaking a plot never re-reads every cluster (the compute step
+is skipped unless its input changed):
 
 ```
-distance_intra.py      # intra distance / dihedral plots
-distance_inter.py      # inter distance plots, incl. double bridges
-gauche_anti.py         # gauche vs anti populations
-qtaim_analysis.py      # BCP rho/Gb/Vb vs distance + QTAIM net-charge histogram +
-                       # Poincare-Hopf satisfied count
-visualiser_data.py     # |J| distributions per basis / variant
-karplus_fit.py         # Karplus + distance fits, RMSE summary
+# PLAMS compute — need $AMSBIN/plams, write analysis/cache/*.pkl
+distance_intra.py      # intra C-H / H-H distances + H-C-C-H, N-CH2-CH2-O dihedrals
+distance_inter.py      # inter urea-choline distances, incl. double bridges
+gauche_anti.py         # N-CH2-CH2-O gauche vs anti populations
+qtaim_analysis.py      # BCP rho/Gb/Vb + QTAIM net charges + Poincare-Hopf count
+
+# plotters / reports — plain python, read caches and/or the DB
+distance_plot.py       # intra + inter distance / dihedral plots (merged intra+inter)
+gauche_anti_plot.py    # gauche vs anti histogram
+qtaim_analysis_plot.py # BCP properties vs distance + net-charge histogram
+visualiser_data.py     # |J| (HH) distributions per basis/variant; cubic-mean effective J
+ch_coupling.py         # |J| C(urea)-H couplings; cubic-mean box, SCF-flagged rows excluded
+karplus_fit.py         # Karplus + descriptor fits, RMSE summary
+
+# standalone — not run by analysis.sh
 direct_dij.py          # direct dipolar coupling |D_ij| histogram
-karplus_ml.py          # ML model — memory-heavy, run manually (not from analysis.sh)
+karplus_ml.py          # ML model — memory-heavy, run manually
 ```
+
+All J stats/plots use `|J|` (the sign is meaningless vs experiment); the
+representative average is the "cubic" power mean (`hassan_functions/jstats.py`).
 
 ## Atom indexing
 
@@ -121,8 +140,11 @@ classify by species.
 | `ordering`  | `canonical_order`, `reorder`, `classify_sort`, `compute_offsets` — BFS canonicalisation of atom indices and species-based sorting of clusters |
 | `io`        | `get_step_from_filename`, `read_xyz`, `normalise_symbol`, `read_labeled_matrix`, `read_qtaim_charges` |
 | `db`        | `table_exists`, `column_exists` (SQLite helpers) |
+| `cache`     | `save_cache(name, data)`, `load_cache(name)` — pickle PLAMS-compute results under `analysis/cache/` |
 | `criann`    | all CRIANN/SLURM config: `slurm_script(jobname, case, partition, ...)` + the shared `#SBATCH` template, `PARTITION_WALLTIME` (court, tcourt, long, tlong), `VARIANT_SLURM` (per-variant partition/walltime), `SCF_WARNINGS`, `MODULE`, `NTASKS`, `CPUS_PER_TASK` |
-| `plotting`  | `PLOT_STYLES`, `hist`, `mlabel`, `stats`, `style_axes`, `style_cbar` |
+| `plotting`  | `PLOT_STYLES`, `hist`, `mlabel`, `stats`, `style_axes`, `style_cbar`, `save_fig` (opaque→PDF, transparent→SVG) |
+| `style`     | `apply_style(preset)` — centralised matplotlib rcParams (font sizes, `usetex`, LaTeX preamble); presets `default` / `large` / `notex` |
+| `jstats`    | `cubic_mean`, `cubic_dispersion` — the p=2.25 power-mean "effective J" used for every J coupling (HH + CH) |
 | `constants` | `FORMULAS` (urea, choline, chloride, water), NMR `ISOTOPE_FOR_SYMBOL` and `GAMMA`, physical constants (`MU0_OVER_4PI`, `HBAR`, `TWO_PI`, `ANGSTROM_TO_M`) |
 
 ### Adapting to a different system

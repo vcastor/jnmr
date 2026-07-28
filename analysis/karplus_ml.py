@@ -15,9 +15,9 @@ from sklearn.pipeline        import Pipeline
 from sklearn.base            import BaseEstimator, RegressorMixin, clone
 from sklearn.model_selection import StratifiedGroupKFold, cross_val_predict
 from hassan_functions.plotting import PLOT_STYLES, style_axes
+from hassan_functions.style    import apply_style
 
-plt.rcParams["text.usetex"]         = True
-plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
+apply_style("large", fonts=False)
 
 PLOT_DIR = "plots"
 DB_PATH  = "nmr_jcoupling.db"

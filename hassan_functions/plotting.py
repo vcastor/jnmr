@@ -1,7 +1,21 @@
 import numpy as np
 import seaborn as sns
+import matplotlib.pyplot as plt
 
-PLOT_STYLES = [('black', False, ''), ('white', True, '_transparent')]
+PLOT_STYLES = [('black', False, ''), ('black', True, '_transparent')]
+
+# transparent variant: 60% white panel behind the data so it stays readable on any
+# background (full transparency is avoided for reading purposes)
+TRANSPARENT_BG = (1.0, 1.0, 1.0, 0.6)
+
+def save_fig(fig, path_no_ext, transparent):
+    """Opaque PDF, or (transparent mode) an SVG whose margin is transparent while the
+    axes keep the 60% white panel set by style_axes."""
+    if transparent:
+        fig.savefig(f"{path_no_ext}.svg", facecolor='none', edgecolor='none')
+    else:
+        fig.savefig(f"{path_no_ext}.pdf")
+    plt.close(fig)
 
 def stats(data, unit='A'):
     if not data:
@@ -22,8 +36,8 @@ def hist(ax, data, label, colour, letter_colour, bins=40, stat='density'):
                  alpha=0.5, edgecolor=letter_colour,
                  line_kws={"linewidth": 2}, stat=stat)
 
-def style_axes(ax, letter_colour):
-    ax.set_facecolor("none")
+def style_axes(ax, letter_colour, transparent=False):
+    ax.set_facecolor(TRANSPARENT_BG if transparent else "none")
     for spine in ax.spines.values():
         spine.set_color(letter_colour)
     ax.tick_params(colors=letter_colour, which="both")

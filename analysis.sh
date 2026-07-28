@@ -3,13 +3,46 @@
 cd "$(dirname "$0")"
 export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 
-# PLAMS analyses
-$AMSBIN/plams analysis/distance_intra.py 2> /dev/null
-$AMSBIN/plams analysis/distance_inter.py 2> /dev/null
-$AMSBIN/plams analysis/gauche_anti.py    2> /dev/null
-$AMSBIN/plams analysis/qtaim_analysis.py 2> /dev/null
+CACHE_DIR=analysis/cache
+
+# Regenerate a plams cache only when its inputs changed: rebuild if the cache is
+# missing or any dependency (the clusters data / the plams script) is newer than it.
+# Plot-only edits therefore reuse the cache instead of re-reading every cluster.
+# Force a rebuild with:  rm analysis/cache/<name>.pkl
+run_plams() {   # run_plams <cache_name> <script> <dep>...
+  local name="$1" script="$2"; shift 2
+  local cache="$CACHE_DIR/$name.pkl"
+  local stale=0
+  if [ ! -f "$cache" ]; then
+     stale=1
+  else
+    for dep in "$script" "$@"; do
+      [ -e "$dep" ] || continue
+      if [ -n "$(find "$dep" -newer "$cache" 2>/dev/null | head -n 1)" ]; then
+        stale=1
+        break
+      fi
+    done
+  fi
+  if [ "$stale" -eq 1 ]; then
+    echo "[plams] $name: regenerating cache"
+    $AMSBIN/plams "$script" 2> /dev/null
+  else
+    echo "[plams] $name: cache up to date, skipping"
+  fi
+}
+
+run_plams distance_intra analysis/distance_intra.py clusters
+run_plams distance_inter analysis/distance_inter.py clusters
+run_plams gauche_anti    analysis/gauche_anti.py    clusters
+run_plams qtaim_analysis analysis/qtaim_analysis.py clusters
 rm -rf plams_workdir*
 
+./analysis/distance_plot.py
+./analysis/gauche_anti_plot.py
+./analysis/qtaim_analysis_plot.py
 ./analysis/visualiser_data.py
 ./analysis/karplus_fit.py
+./analysis/ch_coupling.py
+./analysis/nh_coupling.py
 

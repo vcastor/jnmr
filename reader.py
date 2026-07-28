@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 import os
+import re
 import glob
 import sqlite3
 import subprocess
+import numpy as np
 from typing import Optional
 from hassan_functions.db import table_exists, column_exists
 from hassan_functions.io import get_step_from_filename, read_labeled_matrix
@@ -12,6 +14,8 @@ DB_PATH    = "nmr_jcoupling.db"
 VARIANTS   = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
 QTAIM_DIR  = "amsoutput/qtaim"
 CDFT_DIR   = "amsoutput/cdft"
+CH_DIR     = "amsoutput/ch"
+NH_DIR     = "amsoutput/nh"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
 GRID_WARNING = "WARNING: Nr of shared arrays in use at the end"
@@ -151,7 +155,6 @@ def update_matrix_for_step(conn, nstep, atom_labels, matrix, prop):
 
 def check_output_ok(path):
     if subprocess.run(["grep", "-qF", GRID_WARNING, path]).returncode == 0:
-        print(f"  grid warning: {os.path.basename(path)}")
         return False
     return subprocess.run(["grep", "-qF", "NORMAL TERMINATION", path]).returncode == 0
 
@@ -197,6 +200,169 @@ def fill_di_chi(conn, cursor):
 
     conn.commit()
 
+# ── C(urea)-H(choline) couplings ─────────────────────────────────────────────
+
+CH_VARIANT     = "TZ2P_FC"          # only CH variant computed so far
+CH_J_COL       = f"J_{CH_VARIANT}"
+CH_COMMENT_COL = f"comment_{CH_VARIANT}"
+
+# Generic FC coupling-block header: "<sym>(<num>) perturbing <sym>(<num>)".
+# Shared by the C(urea)- and N(urea)- single-perturber runs (CH / NH).
+FC_HEADER_RE = re.compile(
+    r"Atom input numbers in the ADF calculation:\s+"
+    r"(\w+)\((\d+)\) perturbing\s+(\w+)\((\d+)\)")
+
+def read_out_atoms(out_path):
+    """{atom_num: (symbol, xyz)} from the 'Geometry / Atoms' echo of an ADF output.
+    The Index column is the ADF atom input number, i.e. the coupling atom number /
+    cluster_id (Å, input orientation). Read from the .out so no .run/.xyz is needed."""
+    with open(out_path) as f:
+        lines = f.readlines()
+    start = next(i for i, l in enumerate(lines)
+                 if l.strip().startswith("Index Symbol")) + 1
+    atoms = {}
+    for l in lines[start:]:
+        p = l.split()
+        if len(p) != 5:
+            break
+        atoms[int(p[0])] = (p[1], np.array([float(p[2]), float(p[3]), float(p[4])]))
+    return atoms
+
+# choline H-type tags for the CH coupling: which group the responding H sits on.
+# From the .out geometry alone — the H's nearest heavy atom is its bond partner, and
+# a carbon partner is CH3 / CH2-N / CH2-O by its own neighbours (mirrors the QTAIM
+# site_tag/carbon_tag). Every CH resp H is a choline H, so C- or O-bound.
+CH_XH_BOND = 1.3   # X-H covalent bond ceiling (Å)
+CH_CC_BOND = 1.8   # C-C / C-N / C-O covalent bond ceiling (Å)
+
+def classify_h(h_num, atoms):
+    hx    = atoms[h_num][1]
+    heavy = min((n for n, (s, _) in atoms.items() if s != 'H'),
+                key=lambda n: np.linalg.norm(atoms[n][1] - hx))
+    hsym, cx = atoms[heavy]
+    if hsym != 'C':
+        return f"H({hsym})"                     # choline OH -> H(O)
+    nb = [(s, np.linalg.norm(x - cx)) for n, (s, x) in atoms.items() if n != heavy]
+    if sum(1 for s, d in nb if s == 'H' and d < CH_XH_BOND) == 3:
+        return "H(CH3)"
+    heavy_nb = {s for s, d in nb if s in ('N', 'O') and d < CH_CC_BOND}
+    return "H(CH2N)" if 'N' in heavy_nb else "H(CH2O)"
+
+def parse_fc_couplings(out_path):
+    """Yield (pert_num, resp_num, j) for each FC coupling block in a single-perturber
+    cpl output (CH: pert = urea C; NH: pert = urea N). The isotropic FC j value sits
+    9 lines below the 'Atom input numbers' header."""
+    with open(out_path) as f:
+        lines = f.readlines()
+    for i, l in enumerate(lines):
+        m = FC_HEADER_RE.search(l)
+        if not m:
+            continue
+        yield int(m.group(2)), int(m.group(4)), float(lines[i + 9].split()[-1])
+
+def scf_warning(path):
+    """The SCF-convergence warning found in the output, or None. Unconverged SCF is
+    what produces the nonphysical ~500 Hz C-H values, so the coupling is still stored
+    but flagged via comment_{variant} (mirroring the HH snapshots) so the analysis can
+    exclude it rather than silently dropping the whole step."""
+    for w in SCF_WARNINGS:
+        if subprocess.run(["grep", "-qF", w, path]).returncode == 0:
+            return w
+    return None
+
+def fill_ch_j(conn, cursor):
+    """Fill ch_coupling.J_TZ2P_FC, distance, comment_TZ2P_FC and h_type from
+    amsoutput/ch/*.out. h_type is the choline group the responding H sits on
+    (H(CH3) / H(CH2N) / H(CH2O) / H(O)). SCF-warned steps are kept, with the
+    warning recorded in comment_TZ2P_FC."""
+    for col in (CH_COMMENT_COL, "h_type"):
+        if not column_exists(cursor, "ch_coupling", col):
+            conn.execute(f"ALTER TABLE ch_coupling ADD COLUMN {col} TEXT")
+    conn.commit()
+
+    for out_path in sorted(glob.glob(os.path.join(CH_DIR, "*.out"))):
+        if not check_output_ok(out_path):
+            continue
+        warning = scf_warning(out_path)
+        n_step = get_step_from_filename(out_path)
+        atoms  = read_out_atoms(out_path)
+        for c_num, h_num, j in parse_fc_couplings(out_path):
+            d  = float(np.linalg.norm(atoms[c_num][1] - atoms[h_num][1]))
+            ht = classify_h(h_num, atoms)
+            cursor.execute(
+                f"INSERT INTO ch_coupling "
+                f"(n_step, C_pert, H_resp, distance, {CH_J_COL}, {CH_COMMENT_COL}, h_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(n_step, C_pert, H_resp) DO UPDATE SET "
+                f"distance = excluded.distance, {CH_J_COL} = excluded.{CH_J_COL}, "
+                f"{CH_COMMENT_COL} = excluded.{CH_COMMENT_COL}, h_type = excluded.h_type",
+                (n_step, c_num, h_num, d, j, warning, ht))
+        conn.commit()
+
+# ── N(urea)-choline couplings ─────────────────────────────────────────────────
+
+NH_VARIANT     = "TZ2P_FC"          # only NH variant computed so far
+NH_J_COL       = f"J_{NH_VARIANT}"
+NH_COMMENT_COL = f"comment_{NH_VARIANT}"
+
+def classify_nh_resp(num, atoms):
+    """Responder group for an N(urea) coupling. The nh run couples each urea N to the
+    choline methyl H's, the choline CH2 hydrogens and the choline CH2 carbons, so the
+    responder is either an H (methyl -> H(CH3), CH2 -> H(CH2N)/H(CH2O), both via
+    classify_h) or a CH2 carbon, tagged C(CH2N)/C(CH2O) by the heavy atom (N+/O) it is
+    bonded to."""
+    sym, cx = atoms[num]
+    if sym == 'H':
+        return classify_h(num, atoms)
+    if sym == 'C':
+        heavy_nb = {s for n, (s, x) in atoms.items()
+                    if n != num and s in ('N', 'O')
+                    and np.linalg.norm(x - cx) < CH_CC_BOND}
+        if 'N' in heavy_nb:
+            return "C(CH2N)"
+        if 'O' in heavy_nb:
+            return "C(CH2O)"
+        return "C(CH3)"
+    return f"{sym}({sym})"
+
+def fill_nh_j(conn, cursor):
+    """Fill nh_coupling.J_TZ2P_FC, distance, comment_TZ2P_FC and resp_type from
+    amsoutput/nh/*.out. Perturber is a urea N; responders are choline methyl H's
+    [H(CH3)], CH2 hydrogens [H(CH2N)/H(CH2O)] and CH2 carbons [C(CH2N)/C(CH2O)].
+    resp_type records which group the responder sits on so the analysis can split by
+    it, mirroring ch_coupling.h_type. SCF-warned steps are kept, with the warning
+    recorded in comment_TZ2P_FC."""
+    # nh_coupling is created by init_db.init_nh_table (as ch_coupling is by
+    # init_ch_table). Until that has been run there is nothing to fill — skip rather
+    # than crash on the ALTERs below (mirrors the guard in analysis/nh_coupling.py).
+    if not table_exists(cursor, "nh_coupling"):
+        print("nh_coupling table absent; run init_nh_table (init_db.py) first "
+              "-- skipping NH couplings.")
+        return
+    for col in (NH_COMMENT_COL, "resp_type"):
+        if not column_exists(cursor, "nh_coupling", col):
+            conn.execute(f"ALTER TABLE nh_coupling ADD COLUMN {col} TEXT")
+    conn.commit()
+
+    for out_path in sorted(glob.glob(os.path.join(NH_DIR, "*.out"))):
+        if not check_output_ok(out_path):
+            continue
+        warning = scf_warning(out_path)
+        n_step  = get_step_from_filename(out_path)
+        atoms   = read_out_atoms(out_path)
+        for n_num, r_num, j in parse_fc_couplings(out_path):
+            d  = float(np.linalg.norm(atoms[n_num][1] - atoms[r_num][1]))
+            rt = classify_nh_resp(r_num, atoms)
+            cursor.execute(
+                f"INSERT INTO nh_coupling "
+                f"(n_step, N_pert, resp, distance, {NH_J_COL}, {NH_COMMENT_COL}, resp_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(n_step, N_pert, resp) DO UPDATE SET "
+                f"distance = excluded.distance, {NH_J_COL} = excluded.{NH_J_COL}, "
+                f"{NH_COMMENT_COL} = excluded.{NH_COMMENT_COL}, resp_type = excluded.resp_type",
+                (n_step, n_num, r_num, d, j, warning, rt))
+        conn.commit()
+
 if __name__ == "__main__":
     conn   = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -205,6 +371,8 @@ if __name__ == "__main__":
     conn.commit()
     fill_j(conn, cursor)
     fill_di_chi(conn, cursor)
+    fill_ch_j(conn, cursor)
+    fill_nh_j(conn, cursor)
 
     conn.close()
 

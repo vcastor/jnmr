@@ -29,6 +29,14 @@ CH_PARTITION       = "long"
 CH_DIST_THRESHOLD  = 5.0   # Å from the urea C; keep every choline H within this
 CH_REQUIRE_VARIANT = "TZ2P_FC"  # only clusters whose H-H (this variant) is already computed
 
+# N(urea)-H1 coupling: like the CH block but the urea N is the perturber and the only
+# responders are the choline methyl H's [H(CH3) = H1]. Set NH_LIMIT to generate only the
+# N smallest pending clusters first (faster J approximations).
+NH_OUT_DIR         = "run_scripts/nh"
+NH_PARTITION       = "long"
+NH_DIST_THRESHOLD  = 5.0   # Å from the urea N; keep every choline methyl H (H1) within this
+NH_REQUIRE_VARIANT = "TZ2P_FC"  # only clusters whose H-H (this variant) is already computed
+
 def classify_cluster(xyz):
     """Classify a cluster into SPECIES, tag each atom with its global 1-based
     cluster_id, and return (mol_data, offsets, sorted_mols, counts)."""
@@ -279,7 +287,40 @@ def ch_interactions(mol_data, dist_threshold=CH_DIST_THRESHOLD):
             })
     return blocks
 
-def write_ch_run(filename, basename, sorted_mols, cpl_blocks):
+def nh_interactions(mol_data, dist_threshold=NH_DIST_THRESHOLD):
+    """N(urea)-H1 coupling blocks: for each urea N, every choline methyl H [H1] within
+    dist_threshold, keyed by cluster_id (pert = urea N, resp = choline H(CH3); one cpl
+    block per N-choline pair). Earlier runs also coupled N to the CH2 H's and CH2
+    carbons; those already-computed clusters are kept, and the reader reads whatever
+    responders each .out holds, so the new runs are the leaner N-H1 only."""
+    ureas    = mol_data['urea']
+    cholines = mol_data['choline']
+    blocks = []
+    for ui, u in enumerate(ureas):
+        n_ureas = [at for at in u.atoms if at.symbol == 'N']
+        for ni, n_urea in enumerate(n_ureas):
+            for ci, ch in enumerate(cholines):
+                ch3_h = [h for _c, hs in find_xh_groups(ch, 'C', 3, neighbour='N')
+                         for h in hs if distance(n_urea, h) <= dist_threshold]
+                if not ch3_h:
+                    continue
+                blocks.append({
+                    'label': f"Urea {ui + 1} N{ni + 1} - Choline {ci + 1}  "
+                             f"[N(urea)-H(CH3) within {dist_threshold} A]",
+                    'pert':  n_urea.cluster_id,
+                    'resp':  [h.cluster_id for h in ch3_h],
+                })
+    return blocks
+
+def cluster_natoms(xyz_file):
+    """Atom count from an xyz's first line (0 if empty) — to process small clusters first."""
+    with open(xyz_file) as f:
+        line = f.readline().strip()
+    return int(line) if line.isdigit() else 0
+
+def write_cpl_run(filename, basename, sorted_mols, cpl_blocks):
+    """One System/engine + a cpl block per (pert, resp) entry — shared by the CH and
+    NH single-perturber runs."""
     with open(filename, "w") as f:
         write_system_engine(f, sorted_mols, basename)
         for block in cpl_blocks:
@@ -296,8 +337,10 @@ def warning_steps(cursor, variant):
 
 # ── main ──────────────────────────────────────────────────────────────────
 # Default: the 4-variant NMR workflow (seed DB + write .run/.sl).
-# Opt-in extension: set CH=1 to generate ONLY the C(urea)-H scripts, e.g.
+# Opt-in extensions: set CH=1 for ONLY the C(urea)-H scripts, or NH=1 for ONLY the
+# N(urea)-H(CH3)/-C(CH2) scripts, e.g.
 #   CH=1 $AMSBIN/plams pipeline/coupling_generator.py
+#   NH=1 $AMSBIN/plams pipeline/coupling_generator.py
 
 init()
 
@@ -326,9 +369,44 @@ if os.environ.get("CH"):
         mol_data, offs, sorted_mols, counts = classify_cluster(xyz_file)
         cpl_blocks = ch_interactions(mol_data)
         if cpl_blocks:
-            write_ch_run(ch_run, basename, sorted_mols, cpl_blocks)
+            write_cpl_run(ch_run, basename, sorted_mols, cpl_blocks)
             with open(os.path.join(CH_OUT_DIR, f"{basename}.sl"), "w") as f:
                 f.write(slurm_script(f"ch{n_step}", basename, CH_PARTITION))
+
+elif os.environ.get("NH"):
+    os.makedirs(NH_OUT_DIR, exist_ok=True)
+    # Smallest clusters first (fast J approximations); already-computed / already-scripted
+    # clusters are skipped, so this only ever writes the NEXT pending clusters. NH_LIMIT
+    # caps how many new run files to write in this pass (0 = no cap).
+    nh_limit = int(os.environ.get("NH_LIMIT", 0))
+    written  = 0
+    for xyz_file in sorted(xyz_files, key=cluster_natoms):
+        if nh_limit and written >= nh_limit:
+            break
+        basename = os.path.splitext(os.path.basename(xyz_file))[0]
+        n_step   = get_step_from_filename(xyz_file)
+
+        if sum(1 for _ in open(xyz_file)) - 2 < 1:
+            continue
+
+        # only clusters whose H-H is already computed
+        if not os.path.exists(os.path.join("amsoutput", NH_REQUIRE_VARIANT,
+                                           f"{basename}.out")):
+            continue
+
+        nh_run = os.path.join(NH_OUT_DIR, f"{basename}.run")
+        nh_sl  = os.path.join(NH_OUT_DIR, f"{basename}.sl")
+        nh_out = os.path.join("amsoutput", "nh", f"{basename}.out")
+        if os.path.exists(nh_out) or os.path.exists(nh_run) or os.path.exists(nh_sl):
+            continue
+
+        mol_data, offs, sorted_mols, counts = classify_cluster(xyz_file)
+        cpl_blocks = nh_interactions(mol_data)
+        if cpl_blocks:
+            write_cpl_run(nh_run, basename, sorted_mols, cpl_blocks)
+            with open(os.path.join(NH_OUT_DIR, f"{basename}.sl"), "w") as f:
+                f.write(slurm_script(f"nh{n_step}", basename, NH_PARTITION))
+            written += 1
 
 else:
     conn = sqlite3.connect(DB_PATH)

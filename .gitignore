@@ -1,4 +1,5 @@
 plams_workdir*
+analysis/cache/
 *.rkf
 *.xyz
 *.run
@@ -14,3 +15,4 @@ plams_workdir*
 __*__/
 *.pyc
 plots/*
+*chache/*

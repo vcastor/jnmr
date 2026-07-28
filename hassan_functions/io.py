@@ -3,6 +3,7 @@ import re
 import numpy as np
 
 CHARGE_HEADER = "Atom         Population     Net charge    Spin density      Laplacian"
+CDFT_FUKUI_HEADER = "ATOMIC DESCRIPTORS: CANONICAL ENSEMBLE"
 
 def get_step_from_filename(path):
     """Pull the first integer out of the file's basename (no extension)."""
@@ -75,4 +76,29 @@ def read_qtaim_charges(path):
             break
         charges[int(parts[0])] = float(parts[4])
     return charges
+
+def read_cdft_fukui(path):
+    """{atom_number: (f+, f-, f0, f2)} from a ConceptualDFT .out — the condensed Fukui
+    functions in the 'ATOMIC DESCRIPTORS: CANONICAL ENSEMBLE' block (QTAIM partition):
+    f+ (nucleophilic attack), f- (electrophilic attack), f0 (radical) and f2 (dual
+    descriptor). Atom numbers are absolute (cluster_id), matching the coupling atoms.
+    Returns {} if the block is absent (an incomplete / failed CDFT run)."""
+    with open(path) as f:
+        lines = f.readlines()
+    start = next((i for i, l in enumerate(lines) if CDFT_FUKUI_HEADER in l), None)
+    if start is None:
+        return {}
+    row = re.compile(r"\s*(\d+)\s+\w+\s*:\s*(.*)$")
+    fukui = {}
+    started = False
+    for line in lines[start + 1:]:
+        m = row.match(line)
+        if m:
+            vals = [float(x) for x in m.group(2).split()]
+            if len(vals) >= 4:
+                fukui[int(m.group(1))] = tuple(vals[:4])
+                started = True
+        elif started:
+            break                      # first non-data row after the table -> done
+    return fukui
 

@@ -9,13 +9,10 @@ from sklearn.mixture import GaussianMixture
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from hassan_functions.db import table_exists, column_exists
 from hassan_functions.plotting import PLOT_STYLES, style_axes
+from hassan_functions.style    import apply_style
+from hassan_functions.jstats   import cubic_mean, cubic_dispersion
 
-plt.rcParams['font.size']       = 16
-plt.rcParams['axes.titlesize']  = 19
-plt.rcParams['axes.labelsize']  = 16
-plt.rcParams['xtick.labelsize'] = 14
-plt.rcParams['ytick.labelsize'] = 14
-plt.rcParams['legend.fontsize'] = 14
+apply_style("notex")
 
 PLOT_DIR = "plots"
 DB_PATH  = "nmr_jcoupling.db"
@@ -57,13 +54,6 @@ def collect_j_values(cursor, steps, table_type, basis_cont):
         all_values.extend(abs(row[0]) for row in cursor.fetchall())
     return np.array(all_values, dtype=float)
 
-def cubic_mean(vals, p=2.25):
-    return float((np.mean(vals**p))**(1./p))
-
-def cubic_dispersion(vals, p=2.25):
-    cm = cubic_mean(vals, p=p)
-    return float((np.mean(np.abs(vals-cm)**p))**(1./(p)))
-
 def collect_j_with_distance(cursor, steps, basis_cont):
     j_col = f"J_{basis_cont}"
     j_values, distances = [], []
@@ -101,23 +91,22 @@ def print_stats(j_values, label):
     print(f"  Max:        {np.max(j_values):.4f} Hz")
 
 def fit_bimodal(j_values, label):
-    """Fit a 2-component GMM. Returns (means, per-peak MAE) sorted by peak position."""
+    """Fit a 2-component GMM. Returns (means, per-peak Gaussian width sigma) sorted by
+    peak position — the sigma is the width of each fitted Gaussian, used to annotate the
+    split of the (bimodal) intra J distribution."""
     if j_values.size < 10:
         return None
     gmm = GaussianMixture(n_components=2, random_state=0, max_iter=300)
     gmm.fit(j_values.reshape(-1, 1))
-    idx   = np.argsort(gmm.means_.ravel())
-    means = gmm.means_.ravel()[idx]
-    comp  = gmm.predict(j_values.reshape(-1, 1))
-    # per-peak MAE about the peak mean — same uncertainty measure as the inter
-    maes  = np.array([np.mean(np.abs(j_values[comp == k] - m))
-                      for k, m in zip(idx, means)])
+    idx    = np.argsort(gmm.means_.ravel())
+    means  = gmm.means_.ravel()[idx]
+    sigmas = np.sqrt(gmm.covariances_.ravel())[idx]   # width of each Gaussian component
     print(f"\n  -- Bimodal fit: {label} --")
-    print(f"  Peak 1:      {means[0]:.4f} ± {maes[0]:.4f} Hz  (MAE)")
-    print(f"  Peak 2:      {means[1]:.4f} ± {maes[1]:.4f} Hz  (MAE)")
+    print(f"  Peak 1:      {means[0]:.4f} ± {sigmas[0]:.4f} Hz  (Gaussian width)")
+    print(f"  Peak 2:      {means[1]:.4f} ± {sigmas[1]:.4f} Hz  (Gaussian width)")
     print(f"  Global mean: {np.mean(j_values):.4f} Hz")
     print(f"  MAE:         {np.mean(np.abs(j_values - np.mean(j_values))):.4f} Hz")
-    return means, maes
+    return means, sigmas
 
 def _leg_row(label, mean, mae, precision):
     """Build a monospace-aligned legend row."""
@@ -132,7 +121,7 @@ def _leg_row(label, mean, mae, precision):
 def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
                  gmm_peaks=None, value_precision=2, peak_text_offset=0.03):
     """variant_data: list of (label, j_values, color).
-    gmm_peaks: dict label -> (means, per-peak MAE) for peak annotations."""
+    gmm_peaks: dict label -> (means, per-peak Gaussian width sigma) for peak annotations."""
     finite = [v for _, v, _ in variant_data if v.size > 0]
     if not finite:
         return
@@ -174,18 +163,18 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
     ax.set_ylim(0, ymax*1.15)
 
     if gmm_peaks is not None:
-        for label, (peaks_m, peaks_mae) in gmm_peaks.items():
+        for label, (peaks_m, peaks_sig) in gmm_peaks.items():
             if label not in kde_store:
                 continue
             xc, yc, color = kde_store[label]
-            for pm, pmae in zip(peaks_m, peaks_mae):
+            for pm, psig in zip(peaks_m, peaks_sig):
                 # KDE height at the GMM mean position
                 y_at_pm = float(np.interp(pm, xc, yc))
                 # vertical line from 0 to the curve height only
                 ax.vlines(pm, 0, y_at_pm, color=color, linestyle="--",
                           linewidth=1.0, alpha=0.6)
-                # text uses GMM mean ± MAE (same measure as the inter), above the curve
-                txt = f"{pm:.2f}\u00b1{pmae:.2f}"
+                # text uses GMM mean ± the Gaussian width (sigma of the component)
+                txt = f"{pm:.2f}\u00b1{psig:.2f}"
                 ax.text(pm+0.3, y_at_pm + ymax*0.03, txt,
                         ha="center", va="bottom", fontsize=12, color=LETTER_COLOUR,
                         bbox={
@@ -205,11 +194,14 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
     style_axes(ax, LETTER_COLOUR)
 
     if TRANSPARENT:
-        leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=False,
+        # transparent panel, but keep the box outline so it stays delimited
+        leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=True,
                         prop={"family": "monospace", "size": 12})
-        leg.get_frame().set_facecolor("none")
-        leg.get_frame().set_edgecolor("none")
-        leg.get_frame().set_alpha(0)
+        frame = leg.get_frame()
+        frame.set_facecolor("none")
+        frame.set_edgecolor(LETTER_COLOUR)
+        frame.set_alpha(1.0)
+        frame.set_linewidth(1.0)
     else:
         leg = ax.legend(leg_handles, leg_labels, loc="upper right", frameon=True,
                         prop={"family": "monospace", "size": 12})
@@ -223,7 +215,8 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
     leg.set_zorder(20)
 
     fig.tight_layout()
-    fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
+    ext = "svg" if TRANSPARENT else "pdf"
+    fig.savefig(f"{PLOT_DIR}/{output}.{ext}", dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
 def plot_j_vs_distance(j_values, distances, output):
@@ -236,7 +229,8 @@ def plot_j_vs_distance(j_values, distances, output):
     ax.set_title("Inter-molecular J coupling vs distance")
     style_axes(ax, LETTER_COLOUR)
     fig.tight_layout()
-    fig.savefig(PLOT_DIR + "/" + output, dpi=150, transparent=TRANSPARENT)
+    ext = "svg" if TRANSPARENT else "pdf"
+    fig.savefig(f"{PLOT_DIR}/{output}.{ext}", dpi=150, transparent=TRANSPARENT)
     plt.close(fig)
 
 # ============================== #
@@ -257,8 +251,8 @@ for variant, label, color in VARIANTS:
     print_stats(j, f"Intra · {label}")
     result = fit_bimodal(j, f"Intra · {label}")
     if result is not None:
-        means, maes = result
-        intra_peaks[label] = (means, maes)
+        means, sigmas = result
+        intra_peaks[label] = (means, sigmas)
     intra_data.append((label, j, color))
 
 # inter · all variants overlay
@@ -273,10 +267,10 @@ for variant, label, color in VARIANTS:
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
-                 f"hist_intra{SUFFIX}.pdf", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR,
+                 f"hist_intra{SUFFIX}", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR,
                  gmm_peaks=intra_peaks, value_precision=2, peak_text_offset=0.06)
     plot_overlay(inter_data, "Intermolecular J coupling (NH2-CH3)",
-                 f"hist_inter{SUFFIX}.pdf", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR,
+                 f"hist_inter{SUFFIX}", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR,
                  value_precision=3)
 
 # # Sensitivity of effective J to power-mean exponent (TZ2P_FC reference)

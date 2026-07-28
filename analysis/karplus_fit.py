@@ -6,16 +6,10 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hassan_functions.plotting import PLOT_STYLES, style_axes
+from hassan_functions.plotting import PLOT_STYLES, style_axes, save_fig
+from hassan_functions.style    import apply_style
 
-plt.rcParams["text.usetex"]         = True
-plt.rcParams["text.latex.preamble"] = r"\usepackage{xfrac}"
-plt.rcParams['font.size']       = 18
-plt.rcParams['axes.titlesize']  = 20
-plt.rcParams['axes.labelsize']  = 18
-plt.rcParams['xtick.labelsize'] = 16
-plt.rcParams['ytick.labelsize'] = 16
-plt.rcParams['legend.fontsize'] = 16
+apply_style("large")
 
 PLOT_DIR = "plots"
 DB_PATH  = "nmr_jcoupling.db"
@@ -150,9 +144,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     ax.set_xticks(xticks)
     ax.set_xticklabels(xlabels)
     ax.legend(loc="best", fontsize=16)
-    style_axes(ax, LETTER_COLOUR)
+    style_axes(ax, LETTER_COLOUR, TRANSPARENT)
     fig.tight_layout()
-    fig.savefig(f"{PLOT_DIR}/karplus_fit_{VARIANT}{SUFFIX}.pdf",
-                transparent=TRANSPARENT)
-    plt.close(fig)
+    save_fig(fig, f"{PLOT_DIR}/karplus_fit_{VARIANT}{SUFFIX}", TRANSPARENT)
 
