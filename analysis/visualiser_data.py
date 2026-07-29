@@ -244,8 +244,7 @@ cursor = conn.cursor()
 intra_data  = []
 intra_peaks = {}
 for variant, label, color in VARIANTS:
-    if variant in ["TZ2PJ_all", "TZ2P_all"]:
-        continue
+    # all four variants now, incl. the all-contribution (_all) J's — not just FC
     steps  = get_processed_steps(cursor, variant)
     j      = collect_j_values(cursor, steps, "intra", variant)
     print_stats(j, f"Intra · {label}")

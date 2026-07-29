@@ -14,6 +14,11 @@ SPECIES = ['urea', 'choline', 'chloride']
 DB_PATH = "nmr_jcoupling.db"
 CLUSTERS_DIR = "clusters"
 
+# MD integration timestep, fs per step. Snapshots are named MDStep<N> where N is the MD
+# step, so time[ns] = N * MD_TIMESTEP_FS / 1e6. Used only to turn IGNORE_TIME (ns, an
+# env var) into a minimum step. >>> SET THIS TO YOUR ACTUAL MD TIMESTEP <<<
+MD_TIMESTEP_FS = 1.0
+
 # main NMR workflow: (variant, dso/pso/sd contributions, TZ2P-J basis)
 VARIANTS = [
     ("TZ2P_FC",   False, False),
@@ -36,6 +41,12 @@ NH_OUT_DIR         = "run_scripts/nh"
 NH_PARTITION       = "long"
 NH_DIST_THRESHOLD  = 5.0   # Å from the urea N; keep every choline methyl H (H1) within this
 NH_REQUIRE_VARIANT = "TZ2P_FC"  # only clusters whose H-H (this variant) is already computed
+
+# J_NH intra-urea: the urea N coupled to the urea's OWN H's (its two bonded H's and the
+# two on the other N). Opt in with NH_INTRA=1; NH_INTRA_LIMIT caps the batch size.
+NH_INTRA_OUT_DIR         = "run_scripts/nh_intra"
+NH_INTRA_PARTITION       = "long"
+NH_INTRA_REQUIRE_VARIANT = "TZ2P_FC"
 
 def classify_cluster(xyz):
     """Classify a cluster into SPECIES, tag each atom with its global 1-based
@@ -312,6 +323,24 @@ def nh_interactions(mol_data, dist_threshold=NH_DIST_THRESHOLD):
                 })
     return blocks
 
+def nh_intra_interactions(mol_data):
+    """Intra-urea N-H coupling blocks: for each urea N, all H's in the SAME urea (its two
+    bonded H's plus the two on the other N), keyed by cluster_id (pert = urea N, resp =
+    urea H's; one cpl block per urea N). No distance threshold — the whole urea is small."""
+    blocks = []
+    for ui, u in enumerate(mol_data['urea']):
+        n_ureas = [at for at in u.atoms if at.symbol == 'N']
+        h_ureas = [at for at in u.atoms if at.symbol == 'H']
+        if not h_ureas:
+            continue
+        for ni, n_urea in enumerate(n_ureas):
+            blocks.append({
+                'label': f"Urea {ui + 1} N{ni + 1} - intra  [N(urea)-H(urea)]",
+                'pert':  n_urea.cluster_id,
+                'resp':  [h.cluster_id for h in h_ureas],
+            })
+    return blocks
+
 def cluster_natoms(xyz_file):
     """Atom count from an xyz's first line (0 if empty) — to process small clusters first."""
     with open(xyz_file) as f:
@@ -336,15 +365,31 @@ def warning_steps(cursor, variant):
     return {r[0] for r in cursor.fetchall()}
 
 # ── main ──────────────────────────────────────────────────────────────────
-# Default: the 4-variant NMR workflow (seed DB + write .run/.sl).
-# Opt-in extensions: set CH=1 for ONLY the C(urea)-H scripts, or NH=1 for ONLY the
-# N(urea)-H(CH3)/-C(CH2) scripts, e.g.
+# Default: the 4-variant HH NMR workflow (seed DB + write .run/.sl). SMALL_LIMIT / SMALL_MAX
+# temporarily restrict it to the N smallest clusters (by atom count) for a fast batch, e.g.
+#   SMALL_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py     # 5 smallest pending
+#   SMALL_MAX=80  $AMSBIN/plams pipeline/coupling_generator.py     # only <=80-atom clusters
+# Opt-in extensions (single perturber): CH=1 -> C(urea)-H, NH=1 -> N(urea)-H1,
+# NH_INTRA=1 -> intra-urea N-H (own H's). NH_LIMIT / NH_INTRA_LIMIT cap those batches:
 #   CH=1 $AMSBIN/plams pipeline/coupling_generator.py
 #   NH=1 $AMSBIN/plams pipeline/coupling_generator.py
+#   NH_INTRA=1 NH_INTRA_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py
+# IGNORE_TIME=<ns> drops the first <ns> nanoseconds of the trajectory (over-sampled MD
+# start) — applies to every branch above. E.g. IGNORE_TIME=4 skips steps before 4 ns.
 
 init()
 
 xyz_files = sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz")))
+
+# IGNORE_TIME (ns): don't over-populate the equilibration start of the MD — keep only
+# clusters whose MD step is at/after this many ns (step*MD_TIMESTEP_FS/1e6 >= IGNORE_TIME).
+ignore_ns = float(os.environ.get("IGNORE_TIME", 0))
+if ignore_ns > 0:
+    n_before  = len(xyz_files)
+    xyz_files = [xf for xf in xyz_files
+                 if get_step_from_filename(xf) * MD_TIMESTEP_FS >= ignore_ns * 1e6]
+    print(f"IGNORE_TIME={ignore_ns} ns (dt={MD_TIMESTEP_FS} fs): kept {len(xyz_files)}/"
+          f"{n_before} clusters (>= step {int(ignore_ns * 1e6 / MD_TIMESTEP_FS)})")
 
 if os.environ.get("CH"):
     os.makedirs(CH_OUT_DIR, exist_ok=True)
@@ -408,12 +453,55 @@ elif os.environ.get("NH"):
                 f.write(slurm_script(f"nh{n_step}", basename, NH_PARTITION))
             written += 1
 
+elif os.environ.get("NH_INTRA"):
+    os.makedirs(NH_INTRA_OUT_DIR, exist_ok=True)
+    limit   = int(os.environ.get("NH_INTRA_LIMIT", 0))   # 0 = no cap
+    written = 0
+    for xyz_file in sorted(xyz_files, key=cluster_natoms):
+        if limit and written >= limit:
+            break
+        basename = os.path.splitext(os.path.basename(xyz_file))[0]
+        n_step   = get_step_from_filename(xyz_file)
+
+        if sum(1 for _ in open(xyz_file)) - 2 < 1:
+            continue
+
+        # only clusters whose H-H is already computed
+        if not os.path.exists(os.path.join("amsoutput", NH_INTRA_REQUIRE_VARIANT,
+                                           f"{basename}.out")):
+            continue
+
+        nhi_run = os.path.join(NH_INTRA_OUT_DIR, f"{basename}.run")
+        nhi_sl  = os.path.join(NH_INTRA_OUT_DIR, f"{basename}.sl")
+        nhi_out = os.path.join("amsoutput", "nh_intra", f"{basename}.out")
+        if os.path.exists(nhi_out) or os.path.exists(nhi_run) or os.path.exists(nhi_sl):
+            continue
+
+        mol_data, offs, sorted_mols, counts = classify_cluster(xyz_file)
+        cpl_blocks = nh_intra_interactions(mol_data)
+        if cpl_blocks:
+            write_cpl_run(nhi_run, basename, sorted_mols, cpl_blocks)
+            with open(nhi_sl, "w") as f:
+                f.write(slurm_script(f"nhi{n_step}", basename, NH_INTRA_PARTITION))
+            written += 1
+
 else:
     conn = sqlite3.connect(DB_PATH)
     warned = {variant: warning_steps(conn.cursor(), variant) for variant, _, _ in VARIANTS}
     conn.close()
 
-    for xyz_file in xyz_files:
+    # SMALL_LIMIT / SMALL_MAX: temporarily send only the N smallest clusters (by atom
+    # count) to CRIANN for a fast batch; unset -> original order and no cap.
+    small_limit = int(os.environ.get("SMALL_LIMIT", 0))
+    small_max   = int(os.environ.get("SMALL_MAX", 0))
+    order   = sorted(xyz_files, key=cluster_natoms) if (small_limit or small_max) else xyz_files
+    written = 0
+
+    for xyz_file in order:
+        if small_limit and written >= small_limit:
+            break
+        if small_max and cluster_natoms(xyz_file) > small_max:
+            break                          # sorted ascending -> the rest are all bigger
         basename = os.path.splitext(os.path.basename(xyz_file))[0]
         n_step   = get_step_from_filename(xyz_file)
 
@@ -447,6 +535,7 @@ else:
             cfg = VARIANT_SLURM[variant]
             with open(sl_script, "w") as f:
                 f.write(slurm_script(str(n_step), basename, cfg["partition"], cfg["walltime"]))
+        written += 1                       # one cluster's run/sl written (for SMALL_LIMIT)
 
 finish()
 

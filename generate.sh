@@ -7,6 +7,9 @@
 $AMSBIN/plams pipeline/rkf_to_xyz.py 2> /dev/null
 $AMSBIN/plams pipeline/region_selector.py 2> /dev/null
 $AMSBIN/plams pipeline/coupling_generator.py 2> /dev/null
+# Quick small batches (run standalone, not part of the full pipeline above):
+#   SMALL_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py            # HH: 5 smallest clusters
+#   NH_INTRA=1 NH_INTRA_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py  # intra-urea N-H: 5
 $AMSBIN/plams pipeline/populate_geometry.py 2> /dev/null
 ./pipeline/property_generator.py
 rm -rf plams_workdir*
