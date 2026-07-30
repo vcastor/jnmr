@@ -23,6 +23,17 @@ GRID_WARNING = "WARNING: Nr of shared arrays in use at the end"
 INTRA_TERMS = ["HpHr", "HpCp", "HpCr", "CpCr", "HrCp", "HrCr"]
 INTER_TERMS = ["HpHr"]
 
+# Coupling-block header shared by every cpl parser (HH main runs, CH, NH):
+# "<sym>(<num>) perturbing <sym>(<num>)".
+FC_HEADER_RE = re.compile(
+    r"Atom input numbers in the ADF calculation:\s+"
+    r"(\w+)\((\d+)\) perturbing\s+(\w+)\((\d+)\)")
+# Isotropic-J section markers inside a block. An FC-only run exposes only the
+# 'fermi-contact contribution'; a dso/pso/sd run (…_all variants) adds a 'total
+# calculated spin-spin coupling' section, which is the physical coupling to read.
+FC_MARKER    = "fermi-contact contribution"
+TOTAL_MARKER = "total calculated spin-spin coupling"
+
 # ── SCF convergence warnings ────────────────────────────────────────────────
 
 def mark_warnings(cursor):
@@ -67,28 +78,45 @@ def check_jcolumn_filled(cursor, table_name, j_col) -> bool:
     total = cursor.fetchone()[0]
     return filled == total and total > 0
 
-def find_j_value(filepath, atom1, atom2) -> Optional[float]:
-    """J coupling for a pair of atoms in an ADF output file.
-
-    Searches for 'Atom input numbers in the ADF calculation' containing both
-    atoms, then reads the J value 9 lines later.
-    """
-    result = subprocess.run(
-        f"grep -n 'Atom input numbers in the ADF calculation' {filepath} "
-        f"| grep {atom1} | grep {atom2}",
-        shell=True, capture_output=True, text=True,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
+def _iso_j(line):
+    """Isotropic j (last field) of an 'isotropic k= .. j= ..' line, or None."""
+    try:
+        return float(line.split()[-1])
+    except (ValueError, IndexError):
         return None
 
-    line_num = int(result.stdout.strip().split(':')[0])
-    result = subprocess.run(
-        f"sed -n '{line_num + 9}p' {filepath}",
-        shell=True, capture_output=True, text=True,
-    )
-    if result.returncode == 0 and result.stdout.strip():
-        return float(result.stdout.strip().split()[-1])
-    return None
+def parse_all_couplings(filepath):
+    """{(pert_num, resp_num): isotropic J (Hz)} for every coupling block in an ADF cpl
+    output. Reads the 'total calculated spin-spin coupling' isotropic j when the run has
+    the dso/pso/sd contributions (…_all variants), else the 'fermi-contact contribution'
+    isotropic j (FC-only). This is the fix for the …_all values previously read from the
+    wrong (diamagnetic) contribution because of a fixed line offset. The isotropic j is
+    the line right after each section marker; blocks are split on the header regex, and
+    atoms are matched exactly (no substring collisions)."""
+    with open(filepath) as f:
+        lines = f.readlines()
+    out = {}
+    i, n = 0, len(lines)
+    while i < n:
+        m = FC_HEADER_RE.search(lines[i])
+        if not m:
+            i += 1
+            continue
+        pert, resp = int(m.group(2)), int(m.group(4))
+        fc = total = None
+        j = i + 1
+        while j < n and not FC_HEADER_RE.search(lines[j]):
+            s = lines[j].strip()
+            if s.startswith(TOTAL_MARKER) and j + 1 < n:
+                total = _iso_j(lines[j + 1])
+            elif s.startswith(FC_MARKER) and j + 1 < n:
+                fc = _iso_j(lines[j + 1])
+            j += 1
+        val = total if total is not None else fc
+        if val is not None:
+            out[(pert, resp)] = val
+        i = j
+    return out
 
 def fill_j(conn, cursor):
     """Fill J_{variant} in step_{n}_intra / step_{n}_inter from ADF output."""
@@ -105,6 +133,7 @@ def fill_j(conn, cursor):
             if not os.path.exists(filepath):
                 continue
 
+            couplings = parse_all_couplings(filepath)   # parse the file once
             for suffix in ("intra", "inter"):
                 table = f"step_{n_step}_{suffix}"
                 if not table_exists(cursor, table):
@@ -112,7 +141,7 @@ def fill_j(conn, cursor):
                 cursor.execute(
                     f"SELECT H_pert, H_resp FROM {table} WHERE {j_col} IS NULL")
                 for h_pert, h_resp in cursor.fetchall():
-                    j_value = find_j_value(filepath, h_pert, h_resp)
+                    j_value = couplings.get((h_pert, h_resp))
                     if j_value is not None:
                         cursor.execute(
                             f"UPDATE {table} SET {j_col} = ? WHERE H_pert = ? AND H_resp = ?",
@@ -205,12 +234,6 @@ def fill_di_chi(conn, cursor):
 CH_VARIANT     = "TZ2P_FC"          # only CH variant computed so far
 CH_J_COL       = f"J_{CH_VARIANT}"
 CH_COMMENT_COL = f"comment_{CH_VARIANT}"
-
-# Generic FC coupling-block header: "<sym>(<num>) perturbing <sym>(<num>)".
-# Shared by the C(urea)- and N(urea)- single-perturber runs (CH / NH).
-FC_HEADER_RE = re.compile(
-    r"Atom input numbers in the ADF calculation:\s+"
-    r"(\w+)\((\d+)\) perturbing\s+(\w+)\((\d+)\)")
 
 def read_out_atoms(out_path):
     """{atom_num: (symbol, xyz)} from the 'Geometry / Atoms' echo of an ADF output.
