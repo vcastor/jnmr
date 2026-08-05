@@ -272,16 +272,13 @@ def classify_h(h_num, atoms):
     return "H(CH2N)" if 'N' in heavy_nb else "H(CH2O)"
 
 def parse_fc_couplings(out_path):
-    """Yield (pert_num, resp_num, j) for each FC coupling block in a single-perturber
-    cpl output (CH: pert = urea C; NH: pert = urea N). The isotropic FC j value sits
-    9 lines below the 'Atom input numbers' header."""
-    with open(out_path) as f:
-        lines = f.readlines()
-    for i, l in enumerate(lines):
-        m = FC_HEADER_RE.search(l)
-        if not m:
-            continue
-        yield int(m.group(2)), int(m.group(4)), float(lines[i + 9].split()[-1])
+    """Yield (pert_num, resp_num, j) for each coupling block in a single-perturber cpl
+    output (CH: pert = urea C; NH: pert = urea N). Delegates to parse_all_couplings, so
+    it reads the total isotropic j on dso/pso/sd runs and the fermi-contact isotropic j
+    on FC-only runs — no fragile fixed offset. CH/NH are FC-only today (identical result
+    to the old +9), but this stays correct if they ever gain contributions."""
+    for (pert, resp), j in parse_all_couplings(out_path).items():
+        yield pert, resp, j
 
 def scf_warning(path):
     """The SCF-convergence warning found in the output, or None. Unconverged SCF is

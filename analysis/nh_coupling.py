@@ -74,7 +74,7 @@ j     = np.abs(np.array([r[4] for r in clean]))
 rtype = np.array([r[6] for r in clean])
 
 # ── overall distribution ─────────────────────────────────────────────────────
-# Effective coupling = the "cubic" power mean (p=2.25), same as the HH J couplings.
+# Effective coupling = the "cubic" power mean (p=CUBIC_P, see hassan_functions/jstats.py), same as the HH J couplings.
 print_stats(j, f"N {VARIANT.replace('_', ' ')}")
 
 # The urea N couples to the choline methyl H's [H(CH3)], the two CH2 hydrogens

@@ -168,7 +168,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     # ── QTAIM charge + CDFT Fukui of the CH2 hydrogens (once per choline) ────
     for ch in cholines:
-        _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+        pair = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+        if pair is None:                     # distorted choline: no CH2-CH2 pair
+            continue
+        _, hN, _, hO = pair
         for h in hN:
             q = charges.get(h.cluster_id)
             if q is not None:
@@ -209,7 +212,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
             if nh2_hit:
                 n_pairs_nh2_ch3 += 1
 
-            _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            pair = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            hN = hO = []                     # distorted choline w/o CH2-CH2 pair -> no CH2 H's
+            if pair is not None:
+                _, hN, _, hO = pair
             hits_N = [(h, bcp_props(bcps, o_urea, h)) for h in hN]
             hits_N = [(h, p) for h, p in hits_N if p is not None]
             hits_O = [(h, bcp_props(bcps, o_urea, h)) for h in hO]

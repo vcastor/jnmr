@@ -88,7 +88,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         o_urea     = next(at for at in u.atoms if at.symbol == 'O')
         nh2_groups = find_xh_groups(u, 'N', 2)
         for ch in cholines:
-            _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            pair = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            if pair is None:
+                continue
+            _, hN, _, hO = pair
             _, hOH       = find_xh_groups(ch, 'O', 1)[0]
 
             close_N  = [(h, distance(o_urea, h)) for h in hN  if distance(o_urea, h) <= THR_OU_HCH2N]
@@ -134,7 +137,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         nh2_groups = find_xh_groups(u, 'N', 2)
         heavy      = [c_urea] + n_ureas
         for ch in cholines:
-            _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            pair = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            if pair is None:
+                continue
+            _, hN, _, hO = pair
             _, hOH       = find_xh_groups(ch, 'O', 1)[0]
 
             for h_list, (L_H, L_C, L_N) in (
@@ -162,7 +168,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                    [a for a in u.atoms if a.symbol == 'N']) for u in ureas]
     if urea_sites:
         for ch in cholines:
-            _, hN, _, hO = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            pair = find_adjacent_xh_pair_anchored(ch, 'C', 2, 'N')
+            if pair is None:
+                continue
+            _, hN, _, hO = pair
             _, hOH       = find_xh_groups(ch, 'O', 1)[0]
             for h_list, LO, LC, LN in ((hN,  oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
                                        (hO,  oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),

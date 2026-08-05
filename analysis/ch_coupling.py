@@ -64,7 +64,7 @@ j     = np.abs(np.array([r[4] for r in clean]))
 htype = np.array([r[6] for r in clean])
 
 # ── overall distribution ─────────────────────────────────────────────────────
-# Effective coupling = the "cubic" power mean (p=2.25), same as the HH J couplings.
+# Effective coupling = the "cubic" power mean (p=CUBIC_P, see hassan_functions/jstats.py), same as the HH J couplings.
 print_stats(j, f"C H {VARIANT.replace('_', ' ')}")
 
 # Each responding H sits on one choline group; split every stat/plot by that group.
