@@ -52,7 +52,7 @@ clean_dirs() {
 }
 
 clean_dirs "$BASE" "${NMR_DIRS[@]}"
-clean_dirs /home/2026014/vcasto03 qtaim cdft ch
+clean_dirs /home/2026014/vcasto03 qtaim cdft ch nh nh_intra site
 
 # ── submit ──────────────────────────────────────────────────────────────────
 step_of() {

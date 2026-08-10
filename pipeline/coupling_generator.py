@@ -8,11 +8,28 @@ from typing import List, Tuple, Dict
 from hassan_functions import (distance, classify_sort, compute_offsets,
                               find_xh_bonds, find_xh_groups, find_adjacent_xh_pairs,
                               table_exists, column_exists, get_step_from_filename,
-                              slurm_script, VARIANT_SLURM, SCF_WARNINGS, FORMULAS)
+                              slurm_script, VARIANT_SLURM, SCF_WARNINGS, FORMULAS,
+                              choline_sites, urea_sites, env_int, vprint,
+                              allowed_compositions, composition_allowed)
 
 SPECIES = ['urea', 'choline', 'chloride']
 DB_PATH = "nmr_jcoupling.db"
 CLUSTERS_DIR = "clusters"
+
+# ── temporary CRIANN budget restrictions ─────────────────────────────────────
+# Both are deliberate, temporary limits on what gets submitted. To lift them, set
+# ALLOWED_COMPOSITIONS = None and/or MIN_STEP = 0 (or override per-run via the env
+# vars noted below). They apply to EVERY branch, so a restricted batch stays
+# restricted whether it is the main HH workflow or one of the opt-in extensions.
+
+# Size restriction (tiers + env flags now live in hassan_functions.flags):
+# default is the smallest (2,1,1) tier only; ALLOW_MEDIUM=1 adds (4,2,2);
+# NO_SIZE_LIMIT=1 lifts it.
+
+# Don't start before this MD step. The earlier clusters were computed first and at a
+# different point of the trajectory, so restricting new batches to a later window
+# avoids inheriting whatever bias that sampling carried. Override with MIN_STEP=<n>.
+MIN_STEP = 60_000_000
 
 # MD integration timestep, fs per step. Snapshots are named MDStep<N> where N is the MD
 # step, so time[ns] = N * MD_TIMESTEP_FS / 1e6. Used only to turn IGNORE_TIME (ns, an
@@ -47,6 +64,14 @@ NH_REQUIRE_VARIANT = "TZ2P_FC"  # only clusters whose H-H (this variant) is alre
 NH_INTRA_OUT_DIR         = "run_scripts/nh_intra"
 NH_INTRA_PARTITION       = "long"
 NH_INTRA_REQUIRE_VARIANT = "TZ2P_FC"
+
+# Named-site couplings (H1-H5, Nurea) requested by the experimental team. Opt in with
+# SITE=1; SITE_LIMIT caps the batch size. Unlike the CH/NH extensions this does NOT
+# require the H-H run to exist first — these are a fresh set of clusters chosen by
+# MIN_STEP, so waiting on the older H-H batch would defeat the point.
+SITE_OUT_DIR        = "run_scripts/site"
+SITE_PARTITION      = "long"
+SITE_DIST_THRESHOLD = 5.0   # Å; inter pairs kept within this of the perturber
 
 def classify_cluster(xyz):
     """Classify a cluster into SPECIES, tag each atom with its global 1-based
@@ -347,6 +372,73 @@ def cluster_natoms(xyz_file):
         line = f.readline().strip()
     return int(line) if line.isdigit() else 0
 
+def site_interactions(mol_data, dist_threshold=SITE_DIST_THRESHOLD):
+    """cpl blocks for the named-site couplings (H1-H5, Nurea; see
+    hassan_functions.constants.SITE_COUPLINGS).
+
+    Responders are merged per perturber so one cpl block covers several requested
+    couplings — cpl takes one atompert against many atomresp, and the reader assigns
+    each (pert, resp) pair its own pair_type from the geometry. That keeps a 2:1
+    cluster down to ~9 blocks instead of one per coupling:
+
+      pert = choline H2  -> H1 of the same choline          [H1-H2 intra]
+                            + H5 of nearby ureas            [H5-H2 inter]
+      pert = choline H3  -> H1 of the same choline          [H1-H3 intra]
+                            + H1 of other nearby cholines   [H1-H3 inter]
+                            + H5 of nearby ureas            [H5-H3 inter]
+      pert = choline H4  -> same three groups               [H1-H4 intra/inter,
+                                                             H5-H4 inter]
+      pert = urea N      -> H1/H2/H3 of nearby cholines     [Nurea-H1/H2/H3 inter]
+
+    The perturber is always the sparser site (H2/H3/H4 are 2/2/1 atoms against nine
+    H1's), so the block count follows the small site, not the methyl multiplicity."""
+    cholines = mol_data['choline']
+    ureas    = mol_data['urea']
+    ch_sites = [choline_sites(ch) for ch in cholines]
+    u_sites  = [urea_sites(u) for u in ureas]
+
+    def near(pert_at, candidates):
+        return [a for a in candidates if distance(pert_at, a) <= dist_threshold]
+
+    blocks = []
+    for ci, sites in enumerate(ch_sites):
+        own_h1   = sites['H1']
+        other_h1 = [h for cj, s in enumerate(ch_sites) if cj != ci for h in s['H1']]
+        urea_h5  = [h for s in u_sites for h in s['H5']]
+
+        for site_name, perts, with_other_cholines in (
+                ('H2', sites['H2'], False),   # H1-H2 is intra only
+                ('H3', sites['H3'], True),
+                ('H4', sites['H4'], True)):
+            for p in perts:
+                resp = list(own_h1)
+                if with_other_cholines:
+                    resp += near(p, other_h1)
+                resp += near(p, urea_h5)
+                if not resp:
+                    continue
+                blocks.append({
+                    'label': f"Choline {ci + 1} {site_name} - H1 (intra"
+                             f"{'/inter' if with_other_cholines else ''}) + urea H5 "
+                             f"within {dist_threshold} A",
+                    'pert':  p.cluster_id,
+                    'resp':  [a.cluster_id for a in resp],
+                })
+
+    for ui, s in enumerate(u_sites):
+        choline_h = [h for cs in ch_sites for k in ('H1', 'H2', 'H3') for h in cs[k]]
+        for ni, n_at in enumerate(s['Nurea']):
+            resp = near(n_at, choline_h)
+            if not resp:
+                continue
+            blocks.append({
+                'label': f"Urea {ui + 1} N{ni + 1} - choline H1/H2/H3 "
+                         f"within {dist_threshold} A",
+                'pert':  n_at.cluster_id,
+                'resp':  [a.cluster_id for a in resp],
+            })
+    return blocks
+
 def write_cpl_run(filename, basename, sorted_mols, cpl_blocks):
     """One System/engine + a cpl block per (pert, resp) entry — shared by the CH and
     NH single-perturber runs."""
@@ -370,12 +462,20 @@ def warning_steps(cursor, variant):
 #   SMALL_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py     # 5 smallest pending
 #   SMALL_MAX=80  $AMSBIN/plams pipeline/coupling_generator.py     # only <=80-atom clusters
 # Opt-in extensions (single perturber): CH=1 -> C(urea)-H, NH=1 -> N(urea)-H1,
-# NH_INTRA=1 -> intra-urea N-H (own H's). NH_LIMIT / NH_INTRA_LIMIT cap those batches:
+# NH_INTRA=1 -> intra-urea N-H (own H's), SITE=1 -> the named-site couplings
+# (H1-H5, Nurea). CH_LIMIT / NH_LIMIT / NH_INTRA_LIMIT / SITE_LIMIT cap those batches:
 #   CH=1 $AMSBIN/plams pipeline/coupling_generator.py
 #   NH=1 $AMSBIN/plams pipeline/coupling_generator.py
 #   NH_INTRA=1 NH_INTRA_LIMIT=5 $AMSBIN/plams pipeline/coupling_generator.py
+#   SITE=1 SITE_LIMIT=10 $AMSBIN/plams pipeline/coupling_generator.py
 # IGNORE_TIME=<ns> drops the first <ns> nanoseconds of the trajectory (over-sampled MD
 # start) — applies to every branch above. E.g. IGNORE_TIME=4 skips steps before 4 ns.
+#
+# Two restrictions apply to EVERY branch and are on by default (see the constants at
+# the top of the file): MIN_STEP=60000000 and the (2,1,1)-only size limit. Per run:
+#   MIN_STEP=0 ...        start from the beginning of the trajectory again
+#   ALLOW_MEDIUM=1 ...    also submit (4 urea, 2 choline, 2 chloride) clusters
+#   NO_SIZE_LIMIT=1 ...   submit any cluster size
 
 init()
 
@@ -388,12 +488,32 @@ if ignore_ns > 0:
     n_before  = len(xyz_files)
     xyz_files = [xf for xf in xyz_files
                  if get_step_from_filename(xf) * MD_TIMESTEP_FS >= ignore_ns * 1e6]
-    print(f"IGNORE_TIME={ignore_ns} ns (dt={MD_TIMESTEP_FS} fs): kept {len(xyz_files)}/"
+    vprint(f"IGNORE_TIME={ignore_ns} ns (dt={MD_TIMESTEP_FS} fs): kept {len(xyz_files)}/"
           f"{n_before} clusters (>= step {int(ignore_ns * 1e6 / MD_TIMESTEP_FS)})")
+
+# MIN_STEP: start the new batches later in the trajectory (see the constant above).
+min_step = env_int("MIN_STEP", MIN_STEP)
+if min_step > 0:
+    n_before  = len(xyz_files)
+    xyz_files = [xf for xf in xyz_files if get_step_from_filename(xf) >= min_step]
+    vprint(f"MIN_STEP={min_step}: kept {len(xyz_files)}/{n_before} clusters")
+
+# Cluster-size restriction (hassan_functions.flags): (2,1,1) by default,
+# ALLOW_MEDIUM=1 adds the (4,2,2) tier, NO_SIZE_LIMIT=1 lifts it for this run.
+allowed = allowed_compositions()
+if allowed is not None:
+    n_before  = len(xyz_files)
+    xyz_files = [xf for xf in xyz_files if composition_allowed(xf, allowed)]
+    vprint(f"size restriction {allowed}: kept {len(xyz_files)}/{n_before} clusters")
 
 if os.environ.get("CH"):
     os.makedirs(CH_OUT_DIR, exist_ok=True)
+    # CH_LIMIT caps how many new run files to write in this pass (0 = no cap).
+    ch_limit = env_int("CH_LIMIT")
+    written  = 0
     for xyz_file in xyz_files:
+        if ch_limit and written >= ch_limit:
+            break
         basename = os.path.splitext(os.path.basename(xyz_file))[0]
         n_step   = get_step_from_filename(xyz_file)
 
@@ -417,13 +537,14 @@ if os.environ.get("CH"):
             write_cpl_run(ch_run, basename, sorted_mols, cpl_blocks)
             with open(os.path.join(CH_OUT_DIR, f"{basename}.sl"), "w") as f:
                 f.write(slurm_script(f"ch{n_step}", basename, CH_PARTITION))
+            written += 1
 
 elif os.environ.get("NH"):
     os.makedirs(NH_OUT_DIR, exist_ok=True)
     # Smallest clusters first (fast J approximations); already-computed / already-scripted
     # clusters are skipped, so this only ever writes the NEXT pending clusters. NH_LIMIT
     # caps how many new run files to write in this pass (0 = no cap).
-    nh_limit = int(os.environ.get("NH_LIMIT", 0))
+    nh_limit = env_int("NH_LIMIT")
     written  = 0
     for xyz_file in sorted(xyz_files, key=cluster_natoms):
         if nh_limit and written >= nh_limit:
@@ -453,9 +574,38 @@ elif os.environ.get("NH"):
                 f.write(slurm_script(f"nh{n_step}", basename, NH_PARTITION))
             written += 1
 
+elif os.environ.get("SITE"):
+    os.makedirs(SITE_OUT_DIR, exist_ok=True)
+    limit   = env_int("SITE_LIMIT")   # 0 = no cap
+    written = 0
+    for xyz_file in sorted(xyz_files, key=cluster_natoms):
+        if limit and written >= limit:
+            break
+        basename = os.path.splitext(os.path.basename(xyz_file))[0]
+        n_step   = get_step_from_filename(xyz_file)
+
+        if sum(1 for _ in open(xyz_file)) - 2 < 1:
+            continue
+
+        site_run = os.path.join(SITE_OUT_DIR, f"{basename}.run")
+        site_sl  = os.path.join(SITE_OUT_DIR, f"{basename}.sl")
+        site_out = os.path.join("amsoutput", "site", f"{basename}.out")
+        if (os.path.exists(site_out) or os.path.exists(site_run)
+                or os.path.exists(site_sl)):
+            continue
+
+        mol_data, offs, sorted_mols, counts = classify_cluster(xyz_file)
+        cpl_blocks = site_interactions(mol_data)
+        if cpl_blocks:
+            write_cpl_run(site_run, basename, sorted_mols, cpl_blocks)
+            with open(site_sl, "w") as f:
+                f.write(slurm_script(f"site{n_step}", basename, SITE_PARTITION))
+            written += 1
+    vprint(f"SITE: wrote {written} run/sl pairs into {SITE_OUT_DIR}")
+
 elif os.environ.get("NH_INTRA"):
     os.makedirs(NH_INTRA_OUT_DIR, exist_ok=True)
-    limit   = int(os.environ.get("NH_INTRA_LIMIT", 0))   # 0 = no cap
+    limit   = env_int("NH_INTRA_LIMIT")   # 0 = no cap
     written = 0
     for xyz_file in sorted(xyz_files, key=cluster_natoms):
         if limit and written >= limit:
@@ -492,8 +642,8 @@ else:
 
     # SMALL_LIMIT / SMALL_MAX: temporarily send only the N smallest clusters (by atom
     # count) to CRIANN for a fast batch; unset -> original order and no cap.
-    small_limit = int(os.environ.get("SMALL_LIMIT", 0))
-    small_max   = int(os.environ.get("SMALL_MAX", 0))
+    small_limit = env_int("SMALL_LIMIT")
+    small_max   = env_int("SMALL_MAX")
     order   = sorted(xyz_files, key=cluster_natoms) if (small_limit or small_max) else xyz_files
     written = 0
 

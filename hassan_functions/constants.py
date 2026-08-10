@@ -28,3 +28,54 @@ HBAR          = 1.054571817e-34
 TWO_PI        = 2.0*np.pi
 ANGSTROM_TO_M = 1.0e-10
 
+# ── named NMR sites ──────────────────────────────────────────────────────────
+# The labels the experimental team uses. Every J stored in `site_coupling` is
+# identified by a pair of these, so this dict is the single source of truth for
+# what a pair_type means — README.md renders the same table for humans.
+#
+# choline is (CH3)3N(+)-CH2-CH2-OH, urea is H2N-CO-NH2.
+SITE_LABELS = {
+    'H1':    {'species': 'choline', 'symbol': 'H',
+              'group': 'CH3', 'multiplicity': 9,
+              'description': 'H on a methyl carbon of the trimethylammonium head'},
+    'H2':    {'species': 'choline', 'symbol': 'H',
+              'group': 'CH2 bonded to N+', 'multiplicity': 2,
+              'description': 'H on the CH2 next to the quaternary N'},
+    'H3':    {'species': 'choline', 'symbol': 'H',
+              'group': 'CH2 bonded to O', 'multiplicity': 2,
+              'description': 'H on the CH2 next to the hydroxyl O'},
+    'H4':    {'species': 'choline', 'symbol': 'H',
+              'group': 'OH', 'multiplicity': 1,
+              'description': 'hydroxyl H'},
+    'H5':    {'species': 'urea', 'symbol': 'H',
+              'group': 'NH2', 'multiplicity': 4,
+              'description': 'amine H — the only H in urea'},
+    'Nurea': {'species': 'urea', 'symbol': 'N',
+              'group': 'NH2', 'multiplicity': 2,
+              'description': 'amide N of urea'},
+}
+
+# Couplings requested by the experimental team. `scopes` says whether the pair is
+# collected within one molecule ('intra'), between two molecules ('inter'), or both.
+# A pair of sites on different species can only ever be 'inter'.
+SITE_COUPLINGS = {
+    'H1-H2':    {'sites': ('H1', 'H2'),    'scopes': ('intra',)},
+    'H1-H3':    {'sites': ('H1', 'H3'),    'scopes': ('intra', 'inter')},
+    'H1-H4':    {'sites': ('H1', 'H4'),    'scopes': ('intra', 'inter')},
+    'H5-H2':    {'sites': ('H5', 'H2'),    'scopes': ('inter',)},
+    'H5-H3':    {'sites': ('H5', 'H3'),    'scopes': ('inter',)},
+    'H5-H4':    {'sites': ('H5', 'H4'),    'scopes': ('inter',)},
+    'Nurea-H1': {'sites': ('Nurea', 'H1'), 'scopes': ('inter',)},
+    'Nurea-H2': {'sites': ('Nurea', 'H2'), 'scopes': ('inter',)},
+    'Nurea-H3': {'sites': ('Nurea', 'H3'), 'scopes': ('inter',)},
+}
+
+def pair_type(site_a, site_b):
+    """The SITE_COUPLINGS key for two site labels, or None if the pair is not one of
+    the requested couplings. Order-insensitive: the reader classifies a (pert, resp)
+    pair from geometry and does not know which way round the team writes it."""
+    for key, spec in SITE_COUPLINGS.items():
+        if set(spec['sites']) == {site_a, site_b}:
+            return key
+    return None
+

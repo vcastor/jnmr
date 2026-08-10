@@ -9,6 +9,7 @@ from typing import Optional
 from hassan_functions.db import table_exists, column_exists
 from hassan_functions.io import get_step_from_filename, read_labeled_matrix
 from hassan_functions.criann import SCF_WARNINGS
+from hassan_functions.constants import SITE_COUPLINGS, pair_type
 
 DB_PATH    = "nmr_jcoupling.db"
 VARIANTS   = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
@@ -16,6 +17,7 @@ QTAIM_DIR  = "amsoutput/qtaim"
 CDFT_DIR   = "amsoutput/cdft"
 CH_DIR     = "amsoutput/ch"
 NH_DIR     = "amsoutput/nh"
+SITE_DIR   = "amsoutput/site"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
 GRID_WARNING = "WARNING: Nr of shared arrays in use at the end"
@@ -383,6 +385,125 @@ def fill_nh_j(conn, cursor):
                 (n_step, n_num, r_num, d, j, warning, rt))
         conn.commit()
 
+# ── named-site couplings (H1-H5, Nurea) ──────────────────────────────────────
+
+SITE_VARIANT     = "TZ2P_FC"        # only named-site variant computed so far
+SITE_J_COL       = f"J_{SITE_VARIANT}"
+SITE_COMMENT_COL = f"comment_{SITE_VARIANT}"
+
+def classify_site(num, atoms):
+    """The SITE_LABELS name of an atom ('H1'..'H5', 'Nurea'), or None if it is not one
+    of the named sites. Geometry only, mirroring hassan_functions.sites (which has
+    PLAMS bonds available and cannot be used here):
+
+        H on O  -> H4     the urea O carries no H, so an O-H is the choline hydroxyl
+        H on N  -> H5     the choline N+ carries no H, so an N-H is a urea amine
+        H on C  -> H1 / H2 / H3 by that carbon's own H count and heavy neighbour
+        N w/ H  -> Nurea  again, only urea nitrogens carry hydrogens"""
+    sym, x = atoms[num]
+    if sym == 'N':
+        has_h = any(s == 'H' and np.linalg.norm(c - x) < CH_XH_BOND
+                    for n, (s, c) in atoms.items() if n != num)
+        return 'Nurea' if has_h else None
+    if sym != 'H':
+        return None
+    heavy = min((n for n, (s, _) in atoms.items() if s != 'H'),
+                key=lambda n: np.linalg.norm(atoms[n][1] - x))
+    hsym, cx = atoms[heavy]
+    if hsym == 'O':
+        return 'H4'
+    if hsym == 'N':
+        return 'H5'
+    if hsym != 'C':
+        return None
+    nb = [(s, np.linalg.norm(c - cx)) for n, (s, c) in atoms.items() if n != heavy]
+    n_h = sum(1 for s, d in nb if s == 'H' and d < CH_XH_BOND)
+    if n_h == 3:
+        return 'H1'
+    if n_h == 2:
+        heavy_nb = {s for s, d in nb if s in ('N', 'O') and d < CH_CC_BOND}
+        if 'N' in heavy_nb:
+            return 'H2'
+        if 'O' in heavy_nb:
+            return 'H3'
+    return None
+
+def molecule_ids(atoms):
+    """{atom_num: molecule_id} by connected components of the covalent graph.
+    Needed to tell an intra pair (same molecule) from an inter one; the .out echo
+    has no connectivity, so bonds are inferred from distance as elsewhere here."""
+    nums  = list(atoms)
+    adj   = {n: [] for n in nums}
+    for i, a in enumerate(nums):
+        sa, xa = atoms[a]
+        for b in nums[i + 1:]:
+            sb, xb = atoms[b]
+            cutoff = CH_XH_BOND if 'H' in (sa, sb) else CH_CC_BOND
+            if np.linalg.norm(xa - xb) < cutoff:
+                adj[a].append(b)
+                adj[b].append(a)
+    mol_of, mid = {}, 0
+    for n in nums:
+        if n in mol_of:
+            continue
+        stack = [n]
+        mol_of[n] = mid
+        while stack:
+            cur = stack.pop()
+            for nb in adj[cur]:
+                if nb not in mol_of:
+                    mol_of[nb] = mid
+                    stack.append(nb)
+        mid += 1
+    return mol_of
+
+def fill_site_j(conn, cursor):
+    """Fill site_coupling from amsoutput/site/*.out.
+
+    One cpl block covers several requested couplings (see site_interactions in
+    pipeline/coupling_generator.py), so every (pert, resp) pair is classified here:
+    both atoms get a site label, the pair gets its SITE_COUPLINGS pair_type, and the
+    scope is intra/inter by molecule membership. Pairs that are not a requested
+    coupling — or a requested one in a scope that was not asked for, e.g. an H1-H2
+    across two cholines — are skipped rather than stored. SCF-warned steps are kept,
+    with the warning recorded in comment_TZ2P_FC."""
+    if not table_exists(cursor, "site_coupling"):
+        print("site_coupling table absent; run init_site_table (init_db.py) first "
+              "-- skipping named-site couplings.")
+        return
+
+    for out_path in sorted(glob.glob(os.path.join(SITE_DIR, "*.out"))):
+        if not check_output_ok(out_path):
+            continue
+        warning = scf_warning(out_path)
+        n_step  = get_step_from_filename(out_path)
+        atoms   = read_out_atoms(out_path)
+        mol_of  = molecule_ids(atoms)
+        site_of = {n: classify_site(n, atoms) for n in atoms}
+
+        for p_num, r_num, j in parse_fc_couplings(out_path):
+            ps, rs = site_of.get(p_num), site_of.get(r_num)
+            if ps is None or rs is None:
+                continue
+            pt = pair_type(ps, rs)
+            if pt is None:
+                continue
+            scope = 'intra' if mol_of[p_num] == mol_of[r_num] else 'inter'
+            if scope not in SITE_COUPLINGS[pt]['scopes']:
+                continue
+            d = float(np.linalg.norm(atoms[p_num][1] - atoms[r_num][1]))
+            cursor.execute(
+                f"INSERT INTO site_coupling (n_step, pair_type, scope, pert, resp, "
+                f"pert_site, resp_site, distance, {SITE_J_COL}, {SITE_COMMENT_COL}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(n_step, pert, resp) DO UPDATE SET "
+                "pair_type = excluded.pair_type, scope = excluded.scope, "
+                "pert_site = excluded.pert_site, resp_site = excluded.resp_site, "
+                f"distance = excluded.distance, {SITE_J_COL} = excluded.{SITE_J_COL}, "
+                f"{SITE_COMMENT_COL} = excluded.{SITE_COMMENT_COL}",
+                (n_step, pt, scope, p_num, r_num, ps, rs, d, j, warning))
+        conn.commit()
+
 if __name__ == "__main__":
     conn   = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -393,6 +514,7 @@ if __name__ == "__main__":
     fill_di_chi(conn, cursor)
     fill_ch_j(conn, cursor)
     fill_nh_j(conn, cursor)
+    fill_site_j(conn, cursor)
 
     conn.close()
 

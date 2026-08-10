@@ -3,11 +3,18 @@ import os
 import sys
 import sqlite3
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from hassan_functions import slurm_script
+from hassan_functions import (slurm_script, env_int, allowed_compositions,
+                              composition_allowed)
 
 DB_PATH  = "nmr_jcoupling.db"
 RUN_BASE = "run_scripts"
 VARIANTS = ["TZ2P_FC", "TZ2P_all", "TZ2PJ_FC", "TZ2PJ_all"]
+CLUSTERS_DIR = "clusters"
+
+# Env vars (shared with coupling_generator via hassan_functions.flags):
+# MIN_STEP=<n> skips steps before n (default 0: earliest not-yet-computed first),
+# (2,1,1)-only sizes with ALLOW_MEDIUM=1 / NO_SIZE_LIMIT=1, LIMIT=<n> caps how
+# many new steps get run/sl files this pass (0 = no cap).
 
 # QTAIM and CDFT share everything but the ADF engine block, the I/O dirs and
 # the partition they run on.
@@ -55,6 +62,14 @@ def find_successful_steps(cursor):
                 out.append(s)
                 break
     return out
+
+def step_composition_allowed(n_step, allowed):
+    xyz = os.path.join(CLUSTERS_DIR, f"MDStep{n_step}_cluster.xyz")
+    if allowed is None:
+        return True
+    if not os.path.exists(xyz):
+        return False
+    return composition_allowed(xyz, allowed)
 
 def find_run_file(basename):
     for v in VARIANTS:
@@ -152,7 +167,18 @@ if __name__ == "__main__":
     cursor = conn.cursor()
     steps  = find_successful_steps(cursor)
 
+    min_step = env_int("MIN_STEP")
+    steps    = [s for s in steps if s >= min_step]
+
+    allowed = allowed_compositions()
+    steps   = [s for s in steps if step_composition_allowed(s, allowed)]
+
+    limit   = env_int("LIMIT")   # 0 = no cap
+    written = 0
+
     for n_step in steps:
+        if limit and written >= limit:
+            break
         basename = f"MDStep{n_step}_cluster"
 
         if all(analysis_done(basename, cfg) for cfg in ANALYSES.values()):
@@ -175,6 +201,7 @@ if __name__ == "__main__":
             write_property_run(run_path, basename, atoms, atoms_todo, cfg)
             with open(sl_path, "w") as f:
                 f.write(slurm_script(f"{name}{n_step}", basename, cfg["partition"]))
+        written += 1
 
     conn.close()
 

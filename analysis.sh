@@ -36,6 +36,7 @@ run_plams distance_intra analysis/distance_intra.py clusters
 run_plams distance_inter analysis/distance_inter.py clusters
 run_plams gauche_anti    analysis/gauche_anti.py    clusters
 run_plams qtaim_analysis analysis/qtaim_analysis.py clusters
+run_plams choline_fold   analysis/choline_fold.py   clusters
 rm -rf plams_workdir*
 
 ./analysis/distance_plot.py
