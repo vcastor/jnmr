@@ -284,7 +284,7 @@ db_path = "nmr_jcoupling.db"
 # init_nh_table(db_path)      # create nh_coupling (safe: CREATE IF NOT EXISTS)
 # add_nh_jcolumns(db_path)    # add new NH J_{variant} columns later (safe to re-run)
 # add_nh_comment_columns(db_path)  # add NH comment_{variant} columns (safe to re-run)
-# init_nh_intra_table(db_path)     # create nh_intra_coupling (safe: CREATE IF NOT EXISTS)
+init_nh_intra_table(db_path)     # create nh_intra_coupling (safe: CREATE IF NOT EXISTS)
 # add_nh_intra_jcolumns(db_path)   # add new intra-NH J_{variant} columns (safe to re-run)
 # add_nh_intra_comment_columns(db_path)  # add intra-NH comment_{variant} columns (safe to re-run)
 # init_site_table(db_path)          # create site_coupling (safe: CREATE IF NOT EXISTS)

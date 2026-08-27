@@ -12,4 +12,5 @@ from .constants import (FORMULAS, ISOTOPE_FOR_SYMBOL, GAMMA,
                         SITE_LABELS, SITE_COUPLINGS, pair_type)
 from .flags     import (SMALL_COMPOSITION, MEDIUM_COMPOSITION, env_int,
                         allowed_compositions, cluster_composition,
-                        composition_allowed, verbose, vprint)
+                        composition_allowed, verbose, vprint,
+                        partition_override, env_list)

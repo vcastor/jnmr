@@ -9,7 +9,8 @@ from hassan_functions import (distance, classify_sort, compute_offsets,
                               find_xh_bonds, find_xh_groups, find_adjacent_xh_pairs,
                               table_exists, column_exists, get_step_from_filename,
                               slurm_script, VARIANT_SLURM, SCF_WARNINGS, FORMULAS,
-                              choline_sites, urea_sites, env_int, vprint,
+                              PARTITION_WALLTIME, choline_sites, urea_sites,
+                              env_int, vprint, partition_override, env_list,
                               allowed_compositions, composition_allowed)
 
 SPECIES = ['urea', 'choline', 'chloride']
@@ -644,6 +645,8 @@ else:
     # count) to CRIANN for a fast batch; unset -> original order and no cap.
     small_limit = env_int("SMALL_LIMIT")
     small_max   = env_int("SMALL_MAX")
+    # VARIANTS="a,b" generates only those variants this pass (unset = all four)
+    only_variants = env_list("VARIANTS")
     order   = sorted(xyz_files, key=cluster_natoms) if (small_limit or small_max) else xyz_files
     written = 0
 
@@ -663,6 +666,8 @@ else:
         # SCF-warned) need generating — skip the whole PLAMS step if none do
         todo = []
         for variant, contributions, j_basis in VARIANTS:
+            if only_variants and variant not in only_variants:
+                continue
             out_file   = os.path.join("amsoutput", variant, f"{basename}.out")
             run_script = os.path.join("run_scripts", variant, f"{basename}.run")
             sl_script  = os.path.join("run_scripts", variant, f"{basename}.sl")
@@ -682,9 +687,11 @@ else:
 
         for variant, contributions, j_basis, run_script, sl_script in todo:
             write_main_run(sorted_mols, run_script, intra, inter, contributions, j_basis)
-            cfg = VARIANT_SLURM[variant]
+            cfg  = VARIANT_SLURM[variant]
+            part = partition_override() or cfg["partition"]
+            wall = PARTITION_WALLTIME[part] if partition_override() else cfg["walltime"]
             with open(sl_script, "w") as f:
-                f.write(slurm_script(str(n_step), basename, cfg["partition"], cfg["walltime"]))
+                f.write(slurm_script(str(n_step), basename, part, wall))
         written += 1                       # one cluster's run/sl written (for SMALL_LIMIT)
 
 finish()

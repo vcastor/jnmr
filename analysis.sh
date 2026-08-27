@@ -5,9 +5,7 @@ export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 
 CACHE_DIR=analysis/cache
 
-# Regenerate a plams cache only when its inputs changed: rebuild if the cache is
-# missing or any dependency (the clusters data / the plams script) is newer than it.
-# Plot-only edits therefore reuse the cache instead of re-reading every cluster.
+# Regenerate a plams cache only when its inputs changed
 # Force a rebuild with:  rm analysis/cache/<name>.pkl
 run_plams() {   # run_plams <cache_name> <script> <dep>...
   local name="$1" script="$2"; shift 2

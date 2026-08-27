@@ -17,6 +17,7 @@ QTAIM_DIR  = "amsoutput/qtaim"
 CDFT_DIR   = "amsoutput/cdft"
 CH_DIR     = "amsoutput/ch"
 NH_DIR     = "amsoutput/nh"
+NH_INTRA_DIR = "amsoutput/nh_intra"
 SITE_DIR   = "amsoutput/site"
 DI_HEADER  = "LOCALIZATION AND DELOCALIZATION INDEXES (MATRIX ELEMENTS)"
 CHI_HEADER = "CONDENSED LINEAR RESPONSE FUNCTION (MATRIX ELEMENTS)"
@@ -385,6 +386,44 @@ def fill_nh_j(conn, cursor):
                 (n_step, n_num, r_num, d, j, warning, rt))
         conn.commit()
 
+# ── intra-urea N-H couplings ─────────────────────────────────────────────────
+
+NH_INTRA_VARIANT     = "TZ2P_FC"    # only intra-NH variant computed so far
+NH_INTRA_J_COL       = f"J_{NH_INTRA_VARIANT}"
+NH_INTRA_COMMENT_COL = f"comment_{NH_INTRA_VARIANT}"
+
+def fill_nh_intra_j(conn, cursor):
+    """Fill nh_intra_coupling.J_TZ2P_FC, distance and comment_TZ2P_FC from
+    amsoutput/nh_intra/*.out (pert = urea N, resp = same urea's H's). SCF-warned
+    steps are kept, with the warning recorded in comment_TZ2P_FC so the analysis
+    excludes them (as for every other J table)."""
+    if not table_exists(cursor, "nh_intra_coupling"):
+        print("nh_intra_coupling table absent; run init_nh_intra_table (init_db.py) "
+              "first -- skipping intra-NH couplings.")
+        return
+    for col, typ in ((NH_INTRA_J_COL, "REAL"), (NH_INTRA_COMMENT_COL, "TEXT")):
+        if not column_exists(cursor, "nh_intra_coupling", col):
+            conn.execute(f"ALTER TABLE nh_intra_coupling ADD COLUMN {col} {typ}")
+    conn.commit()
+
+    for out_path in sorted(glob.glob(os.path.join(NH_INTRA_DIR, "*.out"))):
+        if not check_output_ok(out_path):
+            continue
+        warning = scf_warning(out_path)
+        n_step  = get_step_from_filename(out_path)
+        atoms   = read_out_atoms(out_path)
+        for n_num, h_num, j in parse_fc_couplings(out_path):
+            d = float(np.linalg.norm(atoms[n_num][1] - atoms[h_num][1]))
+            cursor.execute(
+                f"INSERT INTO nh_intra_coupling "
+                f"(n_step, N_pert, H_resp, distance, {NH_INTRA_J_COL}, {NH_INTRA_COMMENT_COL}) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(n_step, N_pert, H_resp) DO UPDATE SET "
+                f"distance = excluded.distance, {NH_INTRA_J_COL} = excluded.{NH_INTRA_J_COL}, "
+                f"{NH_INTRA_COMMENT_COL} = excluded.{NH_INTRA_COMMENT_COL}",
+                (n_step, n_num, h_num, d, j, warning))
+        conn.commit()
+
 # ── named-site couplings (H1-H5, Nurea) ──────────────────────────────────────
 
 SITE_VARIANT     = "TZ2P_FC"        # only named-site variant computed so far
@@ -514,6 +553,7 @@ if __name__ == "__main__":
     fill_di_chi(conn, cursor)
     fill_ch_j(conn, cursor)
     fill_nh_j(conn, cursor)
+    fill_nh_intra_j(conn, cursor)
     fill_site_j(conn, cursor)
 
     conn.close()

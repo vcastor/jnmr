@@ -7,6 +7,16 @@ import os
 # <NAME>_LIMIT=<n>   cap how many new run/sl pairs a branch writes (0 = no cap),
 #                    e.g. SMALL_LIMIT, CH_LIMIT, NH_LIMIT, NH_INTRA_LIMIT, SITE_LIMIT,
 #                    LIMIT (property_generator)
+# PARTITION=<p>      submit this batch to CRIANN partition p (walltime = that
+#                    partition's cap) instead of each variant's default
+# COMPOSITION=u,c,cl exact (urea, choline, chloride) tiers to admit, ';'-separated
+#                    for several (e.g. COMPOSITION="6,3,3" or "2,1,1;6,3,3");
+#                    overrides the SMALL/MEDIUM tiers
+# VARIANTS=a,b       main HH workflow only: generate just these variants
+#                    (e.g. VARIANTS="TZ2P_FC,TZ2P_all"); unset = all four
+# TAPE=SAVE          sl brings back the whole work dir (rkf, TAPE10, ...);
+#                    default: only the .out file
+# VERBOSE=1 / -v     progress prints (silent by default)
 
 # Only submit clusters with these exact (urea, choline, chloride) counts. The carve
 # ratio is 2 urea : 1 choline chloride, so (2,1,1) is one formula unit (38 atoms) and
@@ -23,6 +33,15 @@ def env_int(name, default=0):
     """Integer env-var flag (limits, MIN_STEP)."""
     return int(os.environ.get(name, default))
 
+def env_list(name):
+    """Comma-separated env-var flag as a list, or None if unset."""
+    v = os.environ.get(name)
+    return v.split(",") if v else None
+
+def partition_override():
+    """CRIANN partition from PARTITION=<p>, or None to keep each variant's default."""
+    return os.environ.get("PARTITION")
+
 def verbose():
     """True only with -v on the command line or VERBOSE=1 — progress prints are
     opt-in, silent by default."""
@@ -35,7 +54,11 @@ def vprint(*a, **k):
 
 def allowed_compositions():
     """Size restriction from the env: [SMALL] by default, +MEDIUM with
-    ALLOW_MEDIUM=1, None (no restriction) with NO_SIZE_LIMIT=1."""
+    ALLOW_MEDIUM=1, None (no restriction) with NO_SIZE_LIMIT=1, or the exact
+    tiers given as COMPOSITION="u,c,cl[;u,c,cl...]" (which overrides the rest)."""
+    if os.environ.get("COMPOSITION"):
+        return [tuple(int(n) for n in tier.split(","))
+                for tier in os.environ["COMPOSITION"].split(";")]
     if os.environ.get("NO_SIZE_LIMIT"):
         return None
     if os.environ.get("ALLOW_MEDIUM"):

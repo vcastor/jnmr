@@ -1,3 +1,5 @@
+import os
+
 MODULE        = "atomic_simu/cobra-ams/2025.106_amd"
 NTASKS        = 12
 CPUS_PER_TASK = 16
@@ -56,9 +58,14 @@ set -x
 sh $INP > $OUT
 set +x
 
-mkdir -p $SLURM_SUBMIT_DIR/$SLURM_JOB_ID
-mv * $SLURM_SUBMIT_DIR/$SLURM_JOB_ID
+{epilogue}
 """
+
+# What comes back from $LOCAL_WORK_DIR: just the .out by default (CRIANN storage);
+# TAPE=SAVE at generation time keeps everything (rkf, TAPE10, ...).
+EPILOGUE_OUT  = "cp $OUT $SLURM_SUBMIT_DIR/"
+EPILOGUE_SAVE = ("mkdir -p $SLURM_SUBMIT_DIR/$SLURM_JOB_ID\n"
+                 "mv * $SLURM_SUBMIT_DIR/$SLURM_JOB_ID")
 
 def slurm_script(jobname, case, partition, walltime=None,
                  ntasks=NTASKS, cpus_per_task=CPUS_PER_TASK, module=MODULE):
@@ -70,4 +77,5 @@ def slurm_script(jobname, case, partition, walltime=None,
         ntasks=ntasks,
         cpus_per_task=cpus_per_task,
         module=module,
+        epilogue=EPILOGUE_SAVE if os.environ.get("TAPE") == "SAVE" else EPILOGUE_OUT,
     )
