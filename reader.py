@@ -204,7 +204,25 @@ def _step_needs_prop(cursor, nstep, prop):
                 return True
     return False
 
+def mark_prop_warnings(conn, cursor, out_dir, comment_col):
+    """Record the SCF-convergence warning of a DI/chi output in snapshots.{comment_col}.
+    The values are still read and stored (the matrices are usable), the flag only lets
+    the analysis exclude the step, as comment_{variant} does for the couplings. Cleared
+    first so a rerun that converges drops its old warning."""
+    if not column_exists(cursor, "snapshots", comment_col):
+        conn.execute(f"ALTER TABLE snapshots ADD COLUMN {comment_col} TEXT")
+    conn.execute(f"UPDATE snapshots SET {comment_col} = NULL")
+    for path in sorted(glob.glob(os.path.join(out_dir, "*.out"))):
+        warning = scf_warning(path)
+        if warning is not None:
+            conn.execute(f"UPDATE snapshots SET {comment_col} = ? WHERE n_step = ?",
+                         (warning, get_step_from_filename(path)))
+    conn.commit()
+
 def fill_di_chi(conn, cursor):
+    mark_prop_warnings(conn, cursor, QTAIM_DIR, "comment_qtaim")
+    mark_prop_warnings(conn, cursor, CDFT_DIR, "comment_cdft")
+
     for table in step_tables(cursor):
         terms = INTRA_TERMS if table.endswith("_intra") else INTER_TERMS
         for col in [f"{p}_{t}" for p in ("DI", "chi") for t in terms]:
