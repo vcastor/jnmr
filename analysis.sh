@@ -44,4 +44,5 @@ rm -rf plams_workdir*
 ./analysis/karplus_fit.py
 ./analysis/ch_coupling.py
 ./analysis/nh_coupling.py
+./analysis/nh_intra_coupling.py
 
