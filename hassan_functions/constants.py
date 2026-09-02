@@ -29,10 +29,6 @@ TWO_PI        = 2.0*np.pi
 ANGSTROM_TO_M = 1.0e-10
 
 # ── named NMR sites ──────────────────────────────────────────────────────────
-# The labels the experimental team uses. Every J stored in `site_coupling` is
-# identified by a pair of these, so this dict is the single source of truth for
-# what a pair_type means — README.md renders the same table for humans.
-#
 # choline is (CH3)3N(+)-CH2-CH2-OH, urea is H2N-CO-NH2.
 SITE_LABELS = {
     'H1':    {'species': 'choline', 'symbol': 'H',
@@ -55,9 +51,6 @@ SITE_LABELS = {
               'description': 'amide N of urea'},
 }
 
-# Couplings requested by the experimental team. `scopes` says whether the pair is
-# collected within one molecule ('intra'), between two molecules ('inter'), or both.
-# A pair of sites on different species can only ever be 'inter'.
 SITE_COUPLINGS = {
     'H1-H2':    {'sites': ('H1', 'H2'),    'scopes': ('intra',)},
     'H1-H3':    {'sites': ('H1', 'H3'),    'scopes': ('intra', 'inter')},

@@ -41,6 +41,7 @@ rm -rf plams_workdir*
 ./analysis/gauche_anti_plot.py
 ./analysis/qtaim_analysis_plot.py
 ./analysis/visualiser_data.py
+./analysis/variant_stats.py
 ./analysis/karplus_fit.py
 ./analysis/ch_coupling.py
 ./analysis/nh_coupling.py

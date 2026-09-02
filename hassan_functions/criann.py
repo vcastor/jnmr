@@ -5,8 +5,6 @@ NTASKS        = 12
 CPUS_PER_TASK = 16
 
 # CRIANN Austral partitions and the walltime we request on each.
-# Caps:  court <= 48h,  long <= 100h,  tlong <= 300h.
-# tcourt is a placeholder — set the cap you actually want.
 PARTITION_WALLTIME = {
     "court":  "47:00:00",
     "tcourt": "23:00:00",
@@ -63,7 +61,8 @@ set +x
 
 # What comes back from $LOCAL_WORK_DIR: just the .out by default (CRIANN storage);
 # TAPE=SAVE at generation time keeps everything (rkf, TAPE10, ...).
-EPILOGUE_OUT  = "cp $OUT $SLURM_SUBMIT_DIR/"
+EPILOGUE_OUT  = ("mkdir -p $SLURM_SUBMIT_DIR/$SLURM_JOB_ID\n"
+                 "cp $OUT $SLURM_SUBMIT_DIR/$SLURM_JOB_ID")
 EPILOGUE_SAVE = ("mkdir -p $SLURM_SUBMIT_DIR/$SLURM_JOB_ID\n"
                  "mv * $SLURM_SUBMIT_DIR/$SLURM_JOB_ID")
 
@@ -79,3 +78,4 @@ def slurm_script(jobname, case, partition, walltime=None,
         module=module,
         epilogue=EPILOGUE_SAVE if os.environ.get("TAPE") == "SAVE" else EPILOGUE_OUT,
     )
+

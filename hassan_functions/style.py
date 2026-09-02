@@ -1,7 +1,5 @@
 import matplotlib.pyplot as plt
 
-# Every plot script pulls its font sizes / LaTeX setup from here so the look is
-# defined in one place. Pick a preset with apply_style("name").
 PREAMBLE_FULL  = r'\usepackage{xfrac}\usepackage{amsmath}'
 PREAMBLE_XFRAC = r'\usepackage{xfrac}'
 

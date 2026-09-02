@@ -47,11 +47,7 @@ def collect_j_values(cursor, steps, table_type, basis_cont, main_only=False):
     The snapshot ids travel with the values because the snapshot, not the individual
     H-H pair, is the independent sampling unit: pairs within one snapshot share a
     geometry and must be resampled together in any error estimate.
-
-    main_only=True keeps only the is_main row per contact — the closest H-H approach in
-    each NH2-CH3 contact, which is the representative coupling for the through-space
-    inter comparison (the observed J is dominated by the closest contact, not the many
-    distant H-H pairs)."""
+"""
     j_col = f"J_{basis_cont}"
     all_values, all_steps = [], []
     for n_step in steps:
@@ -90,7 +86,7 @@ def collect_j_with_distance(cursor, steps, basis_cont):
             distances.append(best[1])
     return np.array(j_values, dtype=float), np.array(distances, dtype=float)
 
-def print_stats(j_values, steps, label):
+def print_stats(j_values, steps, label, p=CUBIC_P):
     print(f"\n{'='*50}")
     print(f"  {label}")
     print(f"{'='*50}")
@@ -98,11 +94,12 @@ def print_stats(j_values, steps, label):
     if j_values.size == 0:
         return
     n_snap = np.unique(steps).size
-    ess    = effective_n(j_values, steps)
-    lo, hi = cubic_mean_ci(j_values, steps)
-    print(f"  N snapshots: {n_snap}  (effective for p={CUBIC_P}: {ess:.1f})")
-    print(f"  Cubic mean: {cubic_mean(j_values):.4f} Hz  95% CI [{lo:.4f}, {hi:.4f}]")
-    print(f"  Cubic disp: {cubic_dispersion(j_values):.4f} Hz")
+    ess    = effective_n(j_values, steps, p=p)
+    lo, hi = cubic_mean_ci(j_values, steps, p=p)
+    print(f"  N snapshots: {n_snap}  (effective for p={p:g}: {ess:.1f})")
+    print(f"  Power mean (p={p:g}): {cubic_mean(j_values, p=p):.4f} Hz  "
+          f"95% CI [{lo:.4f}, {hi:.4f}]")
+    print(f"  Disp (p={p:g}): {cubic_dispersion(j_values, p=p):.4f} Hz")
     print(f"  Mean:       {np.mean(j_values):.4f} Hz")
     print(f"  Median:     {np.median(j_values):.4f} Hz")
     print(f"  Std dev:    {np.std(j_values):.4f} Hz")
@@ -139,9 +136,10 @@ def _leg_row(label, mean, mae, precision):
 
 def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
                  gmm_peaks=None, value_precision=2, peak_text_offset=0.03):
-    """variant_data: list of (label, j_values, color, snapshot_ids).
+    """variant_data: list of (label, j_values, color, snapshot_ids, mean); the KDE uses
+    j_values, the legend the precomputed mean (cutoffs apply to the mean only).
     gmm_peaks: dict label -> (means, per-peak Gaussian width sigma) for peak annotations."""
-    finite = [v for _, v, _, _ in variant_data if v.size > 0]
+    finite = [v for _, v, _, _, _ in variant_data if v.size > 0]
     if not finite:
         return
     xmax = max(np.max(v) for v in finite)*1.05
@@ -155,10 +153,9 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
     leg_handles = []
     leg_labels  = []
 
-    for label, vals, color, stp in variant_data:
+    for label, vals, color, stp, mean in variant_data:
         if vals.size < 2:
             continue
-        mean = cubic_mean(vals)
         mae  = np.mean(np.abs(vals - np.mean(vals)))
         kde  = gaussian_kde(vals, bw_method=0.3)
         y    = kde(x)
@@ -271,25 +268,17 @@ for variant, label, color in VARIANTS:
     if result is not None:
         means, sigmas = result
         intra_peaks[label] = (means, sigmas)
-    intra_data.append((label, j, color, j_stp))
+    intra_data.append((label, j, color, j_stp, cubic_mean(j) if j.size else 0.0))
 
 # inter · all variants overlay
 inter_data = []
 for variant, label, color in VARIANTS:
     steps = get_processed_steps(cursor, variant)
-    # inter is through-space: aggregate the is_main pairs (closest H-H per NH2-CH3
-    # contact), the representative coupling — validated on the well-sampled TZ2P_FC
-    # (is_main cubic ~1.10 Hz vs exp 1.104). This naturally excludes the far-and-large
-    # SCF-clean artefacts (high |J| at >4 A) without an ad-hoc magnitude cap; a high
-    # physical ceiling still guards against extreme junk.
     j, j_stp = collect_j_values(cursor, steps, "inter", variant, main_only=True)
-    n0    = len(j)
-    keep  = j <= J_PHYSICAL_MAX_HZ
+    keep = j <= J_PHYSICAL_MAX_HZ
     j, j_stp = j[keep], j_stp[keep]
-    if len(j) < n0:
-        print(f"  Inter · {label}: dropped {n0 - len(j)} |J| > {J_PHYSICAL_MAX_HZ} Hz")
     print_stats(j, j_stp, f"Inter · {label}")
-    inter_data.append((label, j, color, j_stp))
+    inter_data.append((label, j, color, j_stp, cubic_mean(j) if j.size else 0.0))
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
