@@ -47,6 +47,7 @@ inter_Cu_HOH   = []   # C(urea) - H(OH)
 # O(urea) / C(urea) / N(urea) distance to each choline H type, paired on the SAME H
 # (nearest urea) so the three urea sites can be compared: which one is closer to the
 # choline H's. d_N is to the nearest of the urea's two amino N's.
+oc_HCH3_O  = []; oc_HCH3_C  = []; oc_HCH3_N  = []   # H(CH3)
 oc_HCH2N_O = []; oc_HCH2N_C = []; oc_HCH2N_N = []   # H(CH2 near N+)
 oc_HCH2O_O = []; oc_HCH2O_C = []; oc_HCH2O_N = []   # H(CH2 near O )
 oc_HOH_O   = []; oc_HOH_C   = []; oc_HOH_N   = []   # H(OH)
@@ -173,7 +174,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                 continue
             _, hN, _, hO = pair
             _, hOH       = find_xh_groups(ch, 'O', 1)[0]
-            for h_list, LO, LC, LN in ((hN,  oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
+            hCH3         = [h for _c, hs in find_xh_groups(ch, 'C', 3, neighbour='N')
+                            for h in hs]
+            for h_list, LO, LC, LN in ((hCH3, oc_HCH3_O, oc_HCH3_C, oc_HCH3_N),
+                                       (hN,  oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
                                        (hO,  oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),
                                        (hOH, oc_HOH_O,   oc_HOH_C,   oc_HOH_N)):
                 for h in h_list:
@@ -209,6 +213,9 @@ save_cache("distance_inter", {
     "inter_HCH2O_Nu":     inter_HCH2O_Nu,
     "inter_Cu_HOH":       inter_Cu_HOH,
     "oc_HCH2N_O":         oc_HCH2N_O,
+    "oc_HCH3_O":          oc_HCH3_O,
+    "oc_HCH3_C":          oc_HCH3_C,
+    "oc_HCH3_N":          oc_HCH3_N,
     "oc_HCH2N_C":         oc_HCH2N_C,
     "oc_HCH2N_N":         oc_HCH2N_N,
     "oc_HCH2O_O":         oc_HCH2O_O,

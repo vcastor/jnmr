@@ -168,10 +168,12 @@ inter_HCH2O_Cu     = c.get("inter_HCH2O_Cu", [])
 inter_HCH2O_Nu     = c.get("inter_HCH2O_Nu", [])
 inter_Cu_HOH       = c.get("inter_Cu_HOH", [])
 # O(urea) / C(urea) / N(urea) distance to each choline H type (paired on the same H)
+oc_HCH3_O  = c.get("oc_HCH3_O", []);  oc_HCH3_C  = c.get("oc_HCH3_C", []);  oc_HCH3_N  = c.get("oc_HCH3_N", [])
 oc_HCH2N_O = c.get("oc_HCH2N_O", []); oc_HCH2N_C = c.get("oc_HCH2N_C", []); oc_HCH2N_N = c.get("oc_HCH2N_N", [])
 oc_HCH2O_O = c.get("oc_HCH2O_O", []); oc_HCH2O_C = c.get("oc_HCH2O_C", []); oc_HCH2O_N = c.get("oc_HCH2O_N", [])
 oc_HOH_O   = c.get("oc_HOH_O", []);   oc_HOH_C   = c.get("oc_HOH_C", []);   oc_HOH_N   = c.get("oc_HOH_N", [])
-OC_PANELS  = [(r"H2", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
+OC_PANELS  = [(r"H1", oc_HCH3_O,  oc_HCH3_C,  oc_HCH3_N),
+              (r"H2", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
               (r"H3", oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),
               (r"H4", oc_HOH_O,   oc_HOH_C,   oc_HOH_N)]
 
@@ -312,7 +314,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 
     # O(urea) vs C(urea) vs N(urea): which urea site is closest to each choline H type
     if any(len(dO) for _, dO, _, _ in OC_PANELS):
-        fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+        fig, axes = plt.subplots(1, len(OC_PANELS), figsize=(21, 4.5))
         for ax, (name, dO, dC, dN) in zip(axes, OC_PANELS):
             hist(ax, dO, mlabel(r"O(urea)", dO), "steelblue",  LETTER_COLOUR)
             hist(ax, dC, mlabel(r"C(urea)", dC), "darkorange", LETTER_COLOUR)
@@ -330,7 +332,8 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
         save_fig(fig, f"{PLOT_DIR}/distance_inter_urea_OCN{SUFFIX}", TRANSPARENT)
 
 print("\nO(urea) vs C(urea) vs N(urea) distance to the choline H's (nearest urea, paired):")
-for name, dO, dC, dN in [("H(CH2-N)", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
+for name, dO, dC, dN in [("H(CH3)",   oc_HCH3_O,  oc_HCH3_C,  oc_HCH3_N),
+                         ("H(CH2-N)", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
                          ("H(CH2-O)", oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),
                          ("H(OH)",    oc_HOH_O,   oc_HOH_C,   oc_HOH_N)]:
     if not dO:
