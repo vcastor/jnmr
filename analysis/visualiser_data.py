@@ -107,9 +107,7 @@ def print_stats(j_values, steps, label, p=CUBIC_P):
     print(f"  Max:        {np.max(j_values):.4f} Hz")
 
 def fit_bimodal(j_values, label):
-    """Fit a 2-component GMM. Returns (means, per-peak Gaussian width sigma) sorted by
-    peak position — the sigma is the width of each fitted Gaussian, used to annotate the
-    split of the (bimodal) intra J distribution."""
+    """Fit a 2-component GMM; peak positions/widths printed only."""
     if j_values.size < 10:
         return None
     gmm = GaussianMixture(n_components=2, random_state=0, max_iter=300)
@@ -135,10 +133,9 @@ def _leg_row(label, mean, mae, precision):
     )
 
 def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
-                 gmm_peaks=None, value_precision=2, peak_text_offset=0.03):
+                 value_precision=2):
     """variant_data: list of (label, j_values, color, snapshot_ids, mean); the KDE uses
-    j_values, the legend the precomputed mean (cutoffs apply to the mean only).
-    gmm_peaks: dict label -> (means, per-peak Gaussian width sigma) for peak annotations."""
+    j_values, the legend the precomputed mean (cutoffs apply to the mean only)."""
     finite = [v for _, v, _, _, _ in variant_data if v.size > 0]
     if not finite:
         return
@@ -177,30 +174,6 @@ def plot_overlay(variant_data, title, output, exp_mean=None, exp_std=None,
     all_y = [y for _, y, _ in kde_store.values()]
     ymax  = max(np.max(y) for y in all_y)
     ax.set_ylim(0, ymax*1.15)
-
-    if gmm_peaks is not None:
-        for label, (peaks_m, peaks_sig) in gmm_peaks.items():
-            if label not in kde_store:
-                continue
-            xc, yc, color = kde_store[label]
-            for pm, psig in zip(peaks_m, peaks_sig):
-                # KDE height at the GMM mean position
-                y_at_pm = float(np.interp(pm, xc, yc))
-                # vertical line from 0 to the curve height only
-                ax.vlines(pm, 0, y_at_pm, color=color, linestyle="--",
-                          linewidth=1.0, alpha=0.6)
-                # text uses GMM mean ± the Gaussian width (sigma of the component)
-                txt = f"{pm:.2f}\u00b1{psig:.2f}"
-                ax.text(pm+0.3, y_at_pm + ymax*0.03, txt,
-                        ha="center", va="bottom", fontsize=12, color=LETTER_COLOUR,
-                        bbox={
-                            "boxstyle": "round,pad=0.20",
-                            "facecolor": "white" if not TRANSPARENT else "none",
-                            "edgecolor": color,
-                            "alpha": 0.4,
-                            "linewidth": 0.8,
-                            },
-                        )
 
     ax.set_xlabel("J coupling (Hz)")
     ax.set_ylabel("Relative frequency")
@@ -256,23 +229,20 @@ def plot_j_vs_distance(j_values, distances, output):
 conn   = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
-# intra · all variants overlay
-intra_data  = []
-intra_peaks = {}
+# intra · all variants overlay; GMM peaks printed only, not drawn
+intra_data = []
 for variant, label, color in VARIANTS:
-    # all four variants now, incl. the all-contribution (_all) J's — not just FC
     steps    = get_processed_steps(cursor, variant)
     j, j_stp = collect_j_values(cursor, steps, "intra", variant)
     print_stats(j, j_stp, f"Intra · {label}")
-    result = fit_bimodal(j, f"Intra · {label}")
-    if result is not None:
-        means, sigmas = result
-        intra_peaks[label] = (means, sigmas)
+    fit_bimodal(j, f"Intra · {label}")
     intra_data.append((label, j, color, j_stp, cubic_mean(j) if j.size else 0.0))
 
-# inter · all variants overlay
+# inter · TZ2P_all / TZ2PJ_FC left out until their analysis is settled
 inter_data = []
 for variant, label, color in VARIANTS:
+    if variant in ("TZ2P_all", "TZ2PJ_FC"):
+        continue
     steps = get_processed_steps(cursor, variant)
     j, j_stp = collect_j_values(cursor, steps, "inter", variant, main_only=True)
     keep = j <= J_PHYSICAL_MAX_HZ
@@ -283,7 +253,7 @@ for variant, label, color in VARIANTS:
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
                  f"hist_intra{SUFFIX}", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR,
-                 gmm_peaks=intra_peaks, value_precision=2, peak_text_offset=0.06)
+                 value_precision=2)
     plot_overlay(inter_data, "Intermolecular J coupling (NH2-CH3)",
                  f"hist_inter{SUFFIX}", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR,
                  value_precision=3)

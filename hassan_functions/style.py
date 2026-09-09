@@ -5,13 +5,13 @@ PREAMBLE_XFRAC = r'\usepackage{xfrac}'
 
 PRESETS = {
     # usetex, LaTeX labels (distance/dihedral/CH plots)
-    "default": {"font": 16, "title": 19, "label": 16, "tick": 14, "legend": 14,
+    "default": {"font": 18, "title": 21, "label": 19, "tick": 17, "legend": 15,
                 "usetex": True,  "preamble": PREAMBLE_FULL},
     # slightly larger, single-figure fits (karplus)
-    "large":   {"font": 18, "title": 20, "label": 18, "tick": 16, "legend": 16,
+    "large":   {"font": 20, "title": 22, "label": 21, "tick": 19, "legend": 17,
                 "usetex": True,  "preamble": PREAMBLE_XFRAC},
     # mathtext only, unicode labels such as Å (qtaim, gauche/anti)
-    "notex":   {"font": 16, "title": 19, "label": 16, "tick": 14, "legend": 14,
+    "notex":   {"font": 18, "title": 21, "label": 19, "tick": 17, "legend": 15,
                 "usetex": False, "preamble": PREAMBLE_FULL},
 }
 
