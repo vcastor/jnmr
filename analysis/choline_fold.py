@@ -104,6 +104,8 @@ n_with_rcp = 0            # intra O...H1 folds confirmed by a ring CP
 n_inter_o  = 0            # cholines whose O has a BCP to another choline's H1
 n_inter_h  = 0            # cholines whose H4 has a BCP to another choline's H1
 n_inter    = 0            # either inter contact
+n_sys_intra = 0           # QTAIM snapshots with >=1 ring-closing intra BCP
+n_sys_inter = 0           # QTAIM snapshots with >=1 choline-choline contact BCP
 
 intra_o_bcp = []          # (distance, rho, gb, vb, ratio)
 intra_h_bcp = []
@@ -112,8 +114,9 @@ inter_h_bcp = []
 ring_sizes  = defaultdict(int)
 fold_steps  = []
 
-# geometry over EVERY xyz (QTAIM output or not): per choline the closest O...H1
-# distance, own methyls vs other cholines' methyls
+# geometry over EVERY xyz (QTAIM output or not): per choline the closest
+# hydroxyl-O...H1 distance, own O vs the other cholines' O's — threshold-free
+# "nearest hydroxyl belongs to the same choline?" competition
 geo = []                  # (step, dmin_intra, dmin_inter)  dmin_inter None if single choline
 
 init()
@@ -139,6 +142,7 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
 
     ch_sites = [choline_sites(ch) for ch in mol_data['choline']]
     have_q   = os.path.exists(qpath)
+    sys_intra = sys_inter = False
     if have_q:
         bcps = read_bcps(qpath)
         rcps = read_ring_cps(qpath)
@@ -151,10 +155,13 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         o_at = h4.bonds[0].other_end(h4)
         own_h1   = sites['H1']
         other_h1 = [h for cj, s in enumerate(ch_sites) if cj != ci for h in s['H1']]
+        other_o  = [s['H4'][0].bonds[0].other_end(s['H4'][0])
+                    for cj, s in enumerate(ch_sites) if cj != ci and s['H4']]
 
         geo.append((step,
                     min(distance(o_at, h) for h in own_h1),
-                    min((distance(o_at, h) for h in other_h1), default=None)))
+                    min((distance(o, h) for o in other_o for h in own_h1),
+                        default=None)))
 
         if not have_q:
             continue
@@ -197,10 +204,15 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
         n_inter_h += hit_eh
         if hit_io or hit_ih:
             n_intra += 1
+            sys_intra = True
             if step is not None:
                 fold_steps.append(step)
         if hit_eo or hit_eh:
             n_inter += 1
+            sys_inter = True
+
+    n_sys_intra += sys_intra
+    n_sys_inter += sys_inter
 
 finish()
 
@@ -226,6 +238,21 @@ print(f"  ...also showing a ring CP:     {n_with_rcp:5d}  {_pct(n_with_rcp, n_in
 print(f"  inter O...H1 BCP:              {n_inter_o:5d}  {_pct(n_inter_o, n_cholines)}")
 print(f"  inter H4...H1 BCP:             {n_inter_h:5d}  {_pct(n_inter_h, n_cholines)}")
 print(f"  inter either:                  {n_inter:5d}  {_pct(n_inter, n_cholines)}")
+print(f"  snapshots with a ring BCP:     {n_sys_intra:5d}  {_pct(n_sys_intra, n_systems)}"
+      f"  (fraction of QTAIM MD time)")
+print(f"  snapshots with an inter BCP:   {n_sys_inter:5d}  {_pct(n_sys_inter, n_systems)}")
+
+# ── H1-H4 intra vs inter shares for the favoured-partner table ───────────────
+bcp_i = len(intra_o_bcp) + len(intra_h_bcp)
+bcp_e = len(inter_o_bcp) + len(inter_h_bcp)
+pairs = [(di, de) for _s, di, de in geo if de is not None]
+md_i  = sum(1 for di, de in pairs if di < de)
+print(f"\n  H1-H4 favoured partner (table row):")
+print(f"  BCP share intra / inter:       {_pct(bcp_i, bcp_i + bcp_e)} / "
+      f"{_pct(bcp_e, bcp_i + bcp_e)}  ({bcp_i}/{bcp_e} BCPs)")
+print(f"  MD  share intra / inter:       {_pct(md_i, len(pairs))} / "
+      f"{_pct(len(pairs) - md_i, len(pairs))}  "
+      f"(nearest hydroxyl own/other, {len(pairs)} cholines, all MD)")
 _dstats(intra_o_bcp, "intra O...H1 ")
 _dstats(intra_h_bcp, "intra H4...H1")
 _dstats(inter_o_bcp, "inter O...H1 ")
@@ -263,6 +290,8 @@ save_cache("choline_fold", {
     "n_inter_o":   n_inter_o,
     "n_inter_h":   n_inter_h,
     "n_inter":     n_inter,
+    "n_sys_intra": n_sys_intra,
+    "n_sys_inter": n_sys_inter,
     "intra_o_bcp": intra_o_bcp,
     "intra_h_bcp": intra_h_bcp,
     "inter_o_bcp": inter_o_bcp,
