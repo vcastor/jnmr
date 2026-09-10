@@ -63,12 +63,16 @@ run_plams gauche_anti    analysis/gauche_anti.py    clusters "$RKF_DIR"
 run_plams qtaim_analysis analysis/qtaim_analysis.py clusters "$RKF_DIR"
 run_plams choline_fold   analysis/choline_fold.py   clusters amsoutput/qtaim
 run_plams cl_environment analysis/cl_environment.py clusters amsoutput/qtaim
+run_plams nh2_environment analysis/nh2_environment.py clusters amsoutput/qtaim
+run_plams representative_cluster analysis/representative_cluster.py clusters
+run_plams interaction_matrix analysis/interaction_matrix.py clusters amsoutput/qtaim
 rm -rf plams_workdir*
 
 ./analysis/distance_plot.py
 ./analysis/gauche_anti_plot.py
 ./analysis/qtaim_analysis_plot.py
 ./analysis/cl_environment_plot.py
+./analysis/nh2_environment_plot.py
 ./analysis/visualiser_data.py
 ./analysis/variant_stats.py
 ./analysis/karplus_fit.py
