@@ -2,8 +2,9 @@
 """3x3 species-interaction table (choline / urea / chloride), twice: geometric
 donor-H...acceptor contacts over every cluster xyz, and every inter-molecular BCP
 over the QTAIM outputs (the full picture: Cl-Cl, Cl...N and any other contact a
-distance-and-H criterion misses), each with the per-H-type zoom and, for the BCPs,
-per-cell distance stats. The species tables count each unique pair once and
+distance-and-H criterion misses), each with the per-H-type zoom, an H5 zoom by
+acceptor site (O(urea) / N(urea) / O(Ch) / Cl) and, for the BCPs, per-cell distance
+stats. The species tables count each unique pair once and
 normalise to a single global 100% (symmetric: Ch-urea IS urea-Ch); only the
 per-H-type zoom rows are directional and sum to 100% per row.
 Writes analysis/cache/interaction_matrix.pkl."""
@@ -28,6 +29,10 @@ D_CLCL = 3.7 # Å; Cl...Cl ion-ion contact (BCP d = 3.42 +- 0.14)
 
 SP  = ('choline', 'urea', 'chloride')
 HT  = ('H1', 'H2', 'H3', 'H4', 'H5')
+S5  = ('Ou', 'Nu', 'Och', 'Cl')   # H5 acceptor sites
+S5B = S5 + ('other',)
+SITE = {('urea', 'O'): 'Ou', ('urea', 'N'): 'Nu', ('choline', 'O'): 'Och',
+        ('chloride', 'Cl'): 'Cl'}
 
 def read_bcps(path):
     """{frozenset({atomA, atomB}): {'rho','gb','vb','ratio'}} — same reader as
@@ -63,6 +68,10 @@ zoom   = {h: {b: 0 for b in SP} for h in HT}   # row: donor H type, col: accepto
 matrix_b = {a: {b: 0 for b in SP} for a in SP}   # same tables from the BCPs
 zoom_b   = {h: {b: 0 for b in SP} for h in HT}
 dist_b   = {a: {b: [] for b in SP} for a in SP}  # BCP distances per cell (row view)
+zoom5    = {s: 0 for s in S5}                    # H5 contacts per acceptor site
+dist5    = {s: [] for s in S5}
+zoom5b   = {s: 0 for s in S5B}                   # H5 BCPs per partner site
+dist5b   = {s: [] for s in S5B}                  # (d, rho)
 n_sys = n_contact = n_q = n_bcp = 0
 
 init()
@@ -86,30 +95,34 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
             donors += [(a, h, mid) for a in s[h]]
         o = next((a for a in ch.atoms if a.symbol == 'O'), None)
         if o is not None:
-            acceptors.append((o, 'choline', mid, D_ON))
+            acceptors.append((o, 'choline', mid, D_ON, 'Och'))
         mid += 1
     for u in mol_data['urea']:
         s = urea_sites(u)
         donors += [(a, 'H5', mid) for a in s['H5']]
         acceptors.append((next(a for a in u.atoms if a.symbol == 'O'),
-                          'urea', mid, D_ON))
-        acceptors += [(a, 'urea', mid, D_ON) for a in s['Nurea']]
+                          'urea', mid, D_ON, 'Ou'))
+        acceptors += [(a, 'urea', mid, D_ON, 'Nu') for a in s['Nurea']]
         mid += 1
     cl_atoms = []
     for m in mol_data['chloride']:
         for a in m.atoms:
-            acceptors.append((a, 'chloride', mid, D_CL))
+            acceptors.append((a, 'chloride', mid, D_CL, 'Cl'))
             cl_atoms.append((a, mid))
         mid += 1
 
     donor_sp = {'H1': 'choline', 'H2': 'choline', 'H3': 'choline',
                 'H4': 'choline', 'H5': 'urea'}
     for h_at, ht, dm in donors:
-        for ac, sp, am, cut in acceptors:
-            if am == dm or distance(h_at, ac) > cut:
+        for ac, sp, am, cut, st in acceptors:
+            d = distance(h_at, ac)
+            if am == dm or d > cut:
                 continue
             n_contact += 1
             zoom[ht][sp] += 1
+            if ht == 'H5':
+                zoom5[st] += 1
+                dist5[st].append(d)
             sd = donor_sp[ht]
             a, b = sorted((sd, sp), key=SP.index)
             matrix[a][b] += 1
@@ -134,12 +147,13 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
                 at.cluster_id = off + ai + 1
     flat, _ = cluster_sites(mol_data)
     ht_of   = {a.cluster_id: k for k in HT for a in flat[k]}
-    at_of, mol_id, sp_of = {}, {}, {}
+    at_of, mol_id, sp_of, site_of = {}, {}, {}, {}
     for bi, (name, mol) in enumerate((n, m) for n in SPECIES for m in mol_data[n]):
         for at in mol.atoms:
             at_of[at.cluster_id]  = at
             mol_id[at.cluster_id] = bi
             sp_of[at.cluster_id]  = name
+            site_of[at.cluster_id] = SITE.get((name, at.symbol), 'other')
     for pair, p in read_bcps(qpath).items():
         if len(pair) != 2:
             continue
@@ -155,6 +169,10 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
             zoom_b[ht_of[a]][sp_of[b]] += 1
         if b in ht_of:
             zoom_b[ht_of[b]][sp_of[a]] += 1
+        for h, o in ((a, b), (b, a)):
+            if ht_of.get(h) == 'H5':
+                zoom5b[site_of[o]] += 1
+                dist5b[site_of[o]].append((d, p['rho']))
 
 finish()
 
@@ -189,6 +207,14 @@ print(f"  {'':>9} " + "  ".join(f"{b:>8}" for b in SP))
 for h in HT:
     print(f"  {h:>9} " + row([zoom[h][b] for b in SP]))
 
+print(f"\n  H5 by acceptor site (row sums to 100%):")
+print(f"  {'':>9} " + "  ".join(f"{s:>8}" for s in S5))
+print(f"  {'H5':>9} " + row([zoom5[s] for s in S5]))
+for s in S5:
+    v = np.array(dist5[s])
+    if v.size:
+        print(f"    H5...{s:<5} n={v.size:5d}  d={v.mean():.3f} +- {v.std():.3f} A")
+
 print(f"\n{'='*66}")
 print("  Same tables from the QTAIM BCPs (inter-molecular only)")
 print(f"{'='*66}")
@@ -209,6 +235,14 @@ print(f"\n  zoom — H type vs BCP partner species (rows sum to 100%):")
 print(f"  {'':>9} " + "  ".join(f"{b:>8}" for b in SP))
 for h in HT:
     print(f"  {h:>9} " + row([zoom_b[h][b] for b in SP]))
+print(f"\n  H5 BCPs by partner site (row sums to 100%):")
+print(f"  {'':>9} " + "  ".join(f"{s:>8}" for s in S5B))
+print(f"  {'H5':>9} " + row([zoom5b[s] for s in S5B]))
+for s in S5B:
+    v = np.array(dist5b[s])
+    if v.size:
+        print(f"    H5...{s:<5} n={len(v):5d}  d={v[:,0].mean():.3f} +- {v[:,0].std():.3f} A  "
+              f"rho={v[:,1].mean():.4f} a.u.")
 print()
 
 save_cache("interaction_matrix", {
@@ -217,6 +251,10 @@ save_cache("interaction_matrix", {
     "matrixb": matrix_b,
     "zoomb":   zoom_b,
     "distb":   dist_b,
+    "zoom5":   zoom5,
+    "dist5":   dist5,
+    "zoom5b":  zoom5b,
+    "dist5b":  dist5b,
     "n_sys":   n_sys,
     "n":       n_contact,
     "nq":      n_q,

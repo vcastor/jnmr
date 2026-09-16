@@ -22,8 +22,8 @@ D_CH = 3.0   # Å; heavy...H ceiling for the weaker C-H donors (H1/H2/H3)
 D_CL = 3.3   # Å; Cl...H contact ceiling (BCP Cl...H populations reach ~3.3)
 D_HH = 3.0   # Å; H5...H1 (the NH2-CH3 J contact)
 
-MOTIFS = ('ClH1', 'H2Urea', 'H3Urea', 'ChUrea', 'NH2CH3', 'ChCh',
-          'UreaUrea', 'ClCh', 'ClUrea')
+MOTIFS = ('ClH1', 'H2Urea', 'H3Urea', 'NH1', 'NH2', 'NH3', 'ChUrea',
+          'NH2CH3', 'ChCh', 'UreaUrea', 'ClCh', 'ClUrea')
 
 def motif_distances(mol_data):
     """{motif: min distance or None} for one cluster."""
@@ -55,6 +55,12 @@ def motif_distances(mol_data):
                         for s in ch_sites for h in s['H2']])
     m['H3Urea'] = dmin([(t, h) for t in u_o + u_n
                         for s in ch_sites for h in s['H3']])
+    # urea N against each choline H type
+    m['NH1'] = dmin([(n, h) for n in u_n for h in h1])
+    m['NH2'] = dmin([(n, h) for n in u_n
+                     for s in ch_sites for h in s['H2']])
+    m['NH3'] = dmin([(n, h) for n in u_n
+                     for s in ch_sites for h in s['H3']])
     # urea C=O accepting the choline OH
     m['ChUrea'] = dmin([(o, h) for o in u_o
                         for s in ch_sites for h in s['H4']])
@@ -77,6 +83,7 @@ def motif_distances(mol_data):
 
 def motif_ok(m):
     cut = {'ClH1': D_CL, 'H2Urea': D_CH, 'H3Urea': D_CH,
+           'NH1': D_CH, 'NH2': D_CH, 'NH3': D_CH,
            'ChUrea': D_HB, 'NH2CH3': D_HH, 'ChCh': D_HB,
            'UreaUrea': D_HB, 'ClCh': D_CL, 'ClUrea': D_CL}
     return {k: (m[k] is not None and m[k] <= cut[k]) for k in MOTIFS}
@@ -115,14 +122,19 @@ for xf in sorted(glob.glob(os.path.join(CLUSTERS_DIR, "*.xyz"))):
     ok = motif_ok(m)
     ranking.append((sum(ok.values()), n_mol, natoms, step, ok, m, xf))
 
-# MOTIF="H2Urea" (or "H2Urea,H3Urea"): rank instead by that interaction —
-# clusters showing it, shortest contact first, then fewest molecules
+# MOTIF="A,B": rank by those interactions, any present (shortest first);
+# MOTIF="A+B": only clusters showing ALL of them, tightest sum first
 targets = os.environ.get("MOTIF")
 if targets:
-    targets = targets.split(",")
-    ranking = [r for r in ranking if any(r[4].get(t) for t in targets)]
-    ranking.sort(key=lambda r: (min(r[5][t] for t in targets
-                                    if r[5][t] is not None), r[1], r[2]))
+    need_all = "+" in targets
+    targets  = targets.replace("+", ",").split(",")
+    if need_all:
+        ranking = [r for r in ranking if all(r[4].get(t) for t in targets)]
+        ranking.sort(key=lambda r: (sum(r[5][t] for t in targets), r[1], r[2]))
+    else:
+        ranking = [r for r in ranking if any(r[4].get(t) for t in targets)]
+        ranking.sort(key=lambda r: (min(r[5][t] for t in targets
+                                        if r[5][t] is not None), r[1], r[2]))
 else:
     ranking.sort(key=lambda r: (-r[0], r[1], r[2]))
 
