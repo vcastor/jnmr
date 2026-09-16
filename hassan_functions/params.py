@@ -2,7 +2,7 @@
 # The "label box" at the top of a multi-panel figure (e.g. the rho/Gb/Vb key on the
 # QTAIM distance plots) is enlarged to sit at the panel-title weight, so it reads the
 # same as the rest of the figure text — matching the other plots.
-FS_BOX    = 18
+FS_BOX    = 24
 FS_LEGEND = 14
 
 # ── QTAIM distance plots ──────────────────────────────────────────────────────

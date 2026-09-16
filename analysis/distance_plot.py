@@ -84,9 +84,9 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
 
     # ── panel 0: C H of each CH2 ──────────────────────────────────────────
-    hist(axes[0], intra_CH_N, mlabel(r"H2", intra_CH_N), "seagreen", LETTER_COLOUR)
-    hist(axes[0], intra_CH_O, mlabel(r"H3", intra_CH_O), "purple",   LETTER_COLOUR)
-    axes[0].set_title(r"C$-$H of each CH$_2$")
+    hist(axes[0], intra_CH_N, mlabel(r"H$^{2}$", intra_CH_N), "seagreen", LETTER_COLOUR)
+    hist(axes[0], intra_CH_O, mlabel(r"H$^{3}$", intra_CH_O), "purple",   LETTER_COLOUR)
+    axes[0].set_title(r"C$-$H$^{2}$ \& C$-$H$^{3}$")
     axes[0].set_xlabel(r"distance (\AA)")
     axes[0].set_ylabel("density")
     axes[0].legend(loc='upper right')
@@ -97,7 +97,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     hb = axes[1].hexbin(intra_HH_dih, intra_HH, gridsize=40, cmap="Oranges", mincnt=1)
     cbar = fig.colorbar(hb, ax=axes[1], label="count")
     style_cbar(cbar, LETTER_COLOUR)
-    axes[1].set_title(r"CH$_2$$-$CH$_2$")
+    axes[1].set_title(r"H$^{2}$-H$^{3}$")
     axes[1].set_xlabel(r"$|$H-C-C-H$|$ dihedral (rad)")
     axes[1].set_ylabel(r"H-H distance (\AA)")
     axes[1].set_xlim(0, np.pi)
@@ -128,12 +128,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     # so they get a panel each.
     if intra_NH and intra_Nu_Hother:
         figu, axu = plt.subplots(1, 2, figsize=(11, 4.5))
-        hist(axu[0], intra_NH,        mlabel(r"N$-$H5 (bonded)", intra_NH),
+        hist(axu[0], intra_NH,        mlabel(r"N$-$H$^{5}$ (bonded)", intra_NH),
              "seagreen",   LETTER_COLOUR)
-        hist(axu[1], intra_Nu_Hother, mlabel(r"N$\cdots$H5 (other N)", intra_Nu_Hother),
+        hist(axu[1], intra_Nu_Hother, mlabel(r"N$\cdots$H$^{5}$ (other N)", intra_Nu_Hother),
              "darkorange", LETTER_COLOUR)
-        axu[0].set_title(r"urea N $-$ H5 (2 bonded)")
-        axu[1].set_title(r"urea N $\cdots$ H5 (2 on the other N)")
+        axu[0].set_title(r"urea N $-$ H$^{5}$ (2 bonded)")
+        axu[1].set_title(r"urea N $\cdots$ H$^{5}$ (2 on the other N)")
         for ax in axu:
             ax.set_xlabel(r"distance (\AA)")
             ax.set_ylabel("density")
@@ -172,10 +172,10 @@ oc_HCH3_O  = c.get("oc_HCH3_O", []);  oc_HCH3_C  = c.get("oc_HCH3_C", []);  oc_H
 oc_HCH2N_O = c.get("oc_HCH2N_O", []); oc_HCH2N_C = c.get("oc_HCH2N_C", []); oc_HCH2N_N = c.get("oc_HCH2N_N", [])
 oc_HCH2O_O = c.get("oc_HCH2O_O", []); oc_HCH2O_C = c.get("oc_HCH2O_C", []); oc_HCH2O_N = c.get("oc_HCH2O_N", [])
 oc_HOH_O   = c.get("oc_HOH_O", []);   oc_HOH_C   = c.get("oc_HOH_C", []);   oc_HOH_N   = c.get("oc_HOH_N", [])
-OC_PANELS  = [(r"H1", oc_HCH3_O,  oc_HCH3_C,  oc_HCH3_N),
-              (r"H2", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
-              (r"H3", oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),
-              (r"H4", oc_HOH_O,   oc_HOH_C,   oc_HOH_N)]
+OC_PANELS  = [(r"H$^{1}$", oc_HCH3_O,  oc_HCH3_C,  oc_HCH3_N),
+              (r"H$^{2}$", oc_HCH2N_O, oc_HCH2N_C, oc_HCH2N_N),
+              (r"H$^{3}$", oc_HCH2O_O, oc_HCH2O_C, oc_HCH2O_N),
+              (r"H$^{4}$", oc_HOH_O,   oc_HOH_C,   oc_HOH_N)]
 
 def closest_pct(dO, dC, dN):
     """Percent of H's for which O / C / N is the closest urea site."""
@@ -187,12 +187,12 @@ def closest_pct(dO, dC, dN):
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     # NH2-CH3
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    hist(axes[0], inter_NH_CH3,  mlabel(r"N(urea)$-$H1", inter_NH_CH3),  "steelblue",  LETTER_COLOUR)
-    hist(axes[1], inter_Cu_HCH3, mlabel(r"C(urea)$-$H1", inter_Cu_HCH3), "darkorange", LETTER_COLOUR)
-    hist(axes[2], inter_HH_NCH3, mlabel(r"H5$-$H1",      inter_HH_NCH3), "seagreen",   LETTER_COLOUR)
-    axes[0].set_title(rf"N(urea)$-$H1") # [H-H cutoff {THR_NH2_CH3} \AA]")
-    axes[1].set_title(rf"C(urea)$-$H1") #  [H-H cutoff {THR_NH2_CH3} \AA]")
-    axes[2].set_title(rf"H5$-$H1") #  [cutoff {THR_NH2_CH3} \AA]")
+    hist(axes[0], inter_NH_CH3,  mlabel(r"N(urea)$-$H$^{1}$", inter_NH_CH3),  "steelblue",  LETTER_COLOUR)
+    hist(axes[1], inter_Cu_HCH3, mlabel(r"C(urea)$-$H$^{1}$", inter_Cu_HCH3), "darkorange", LETTER_COLOUR)
+    hist(axes[2], inter_HH_NCH3, mlabel(r"H$^{5}$$-$H$^{1}$",      inter_HH_NCH3), "seagreen",   LETTER_COLOUR)
+    axes[0].set_title(rf"N(urea)$-$H$^{1}$") # [H-H cutoff {THR_NH2_CH3} \AA]")
+    axes[1].set_title(rf"C(urea)$-$H$^{1}$") #  [H-H cutoff {THR_NH2_CH3} \AA]")
+    axes[2].set_title(rf"H$^{5}$$-$H$^{1}$") #  [cutoff {THR_NH2_CH3} \AA]")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
@@ -209,12 +209,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 
     # urea-CH2 HCH-O-HCH
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    hist(axes[0], inter_Ou_HCH2, mlabel(r"O(urea)$-$H2/H3", inter_Ou_HCH2), "steelblue",  LETTER_COLOUR)
-    hist(axes[1], inter_Nu_HCH2, mlabel(r"N(urea)$-$H2/H3", inter_Nu_HCH2), "seagreen",   LETTER_COLOUR)
-    hist(axes[2], inter_HN_HCH2, mlabel(r"H5$-$H2/H3",      inter_HN_HCH2), "darkorange", LETTER_COLOUR)
-    axes[0].set_title(rf"O(urea)$-$H2/H3") #  [HCH-O-HCH, CH2N {THR_OU_HCH2N} \AA, CH2O {THR_OU_HCH2O} \AA]")
-    axes[1].set_title(r"N(urea)$-$H2/H3")
-    axes[2].set_title(r"H5$-$H2/H3")
+    hist(axes[0], inter_Ou_HCH2, mlabel(r"O(urea)$-$H$^{2}$/H$^{3}$", inter_Ou_HCH2), "steelblue",  LETTER_COLOUR)
+    hist(axes[1], inter_Nu_HCH2, mlabel(r"N(urea)$-$H$^{2}$/H$^{3}$", inter_Nu_HCH2), "seagreen",   LETTER_COLOUR)
+    hist(axes[2], inter_HN_HCH2, mlabel(r"H$^{5}$$-$H$^{2}$/H$^{3}$",      inter_HN_HCH2), "darkorange", LETTER_COLOUR)
+    axes[0].set_title(rf"O(urea)$-$H$^{2}$/H$^{3}$") #  [HCH-O-HCH, CH2N {THR_OU_HCH2N} \AA, CH2O {THR_OU_HCH2O} \AA]")
+    axes[1].set_title(r"N(urea)$-$H$^{2}$/H$^{3}$")
+    axes[2].set_title(r"H$^{5}$$-$H$^{2}$/H$^{3}$")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
@@ -231,14 +231,14 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 
     # urea-OH  [O/N/H(NH2)/C](urea)-H(OH)
     fig, axes = plt.subplots(1, 4, figsize=(21, 4.5))
-    hist(axes[0], inter_Ou_HOH, mlabel(r"O(urea)$-$H4", inter_Ou_HOH), "steelblue",  LETTER_COLOUR)
-    hist(axes[1], inter_Nu_HOH, mlabel(r"N(urea)$-$H4", inter_Nu_HOH), "seagreen",   LETTER_COLOUR)
-    hist(axes[2], inter_HN_HOH, mlabel(r"H5$-$H4",      inter_HN_HOH), "darkorange", LETTER_COLOUR)
-    hist(axes[3], inter_Cu_HOH, mlabel(r"C(urea)$-$H4", inter_Cu_HOH), "purple",     LETTER_COLOUR)
-    axes[0].set_title(rf"O(urea)$-$H4") #  [cutoff {THR_OU_HOH} \AA]")
-    axes[1].set_title(r"N(urea)$-$H4")
-    axes[2].set_title(r"H5$-$H4")
-    axes[3].set_title(rf"C(urea)$-$H4") #  [cutoff {THR_CU_OH} \AA]")
+    hist(axes[0], inter_Ou_HOH, mlabel(r"O(urea)$-$H$^{4}$", inter_Ou_HOH), "steelblue",  LETTER_COLOUR)
+    hist(axes[1], inter_Nu_HOH, mlabel(r"N(urea)$-$H$^{4}$", inter_Nu_HOH), "seagreen",   LETTER_COLOUR)
+    hist(axes[2], inter_HN_HOH, mlabel(r"H$^{5}$$-$H$^{4}$",      inter_HN_HOH), "darkorange", LETTER_COLOUR)
+    hist(axes[3], inter_Cu_HOH, mlabel(r"C(urea)$-$H$^{4}$", inter_Cu_HOH), "purple",     LETTER_COLOUR)
+    axes[0].set_title(rf"O(urea)$-$H$^{4}$") #  [cutoff {THR_OU_HOH} \AA]")
+    axes[1].set_title(r"N(urea)$-$H$^{4}$")
+    axes[2].set_title(r"H$^{5}$$-$H$^{4}$")
+    axes[3].set_title(rf"C(urea)$-$H$^{4}$") #  [cutoff {THR_CU_OH} \AA]")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
@@ -252,16 +252,16 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     # double bridge O(urea)-[H(CH2-N) & H(OH)]
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
     hist(axes[0], inter_Ou_HCH2N_dbl,
-         mlabel(r"O$-$H2", inter_Ou_HCH2N_dbl), "steelblue", LETTER_COLOUR)
+         mlabel(r"O$-$H$^{2}$", inter_Ou_HCH2N_dbl), "steelblue", LETTER_COLOUR)
     hist(axes[0], inter_Ou_HOH_dbl,
-         mlabel(r"O$-$H4", inter_Ou_HOH_dbl),   "crimson",   LETTER_COLOUR)
+         mlabel(r"O$-$H$^{4}$", inter_Ou_HOH_dbl),   "crimson",   LETTER_COLOUR)
     hist(axes[1], inter_Nu_dbl,
          mlabel(r"N(urea)$-$H", inter_Nu_dbl),  "seagreen",  LETTER_COLOUR)
     hist(axes[2], inter_HN_dbl,
-         mlabel(r"H5$-$H",      inter_HN_dbl),   "darkorange", LETTER_COLOUR)
-    axes[0].set_title(rf"O(urea)$-$[H2 \& H4]") # rf"[CH2N {THR_OU_HCH2N} \AA, OH {THR_OU_HOH} \AA]")
-    axes[1].set_title(r"N(urea)$-$H (H2 \& H4)")
-    axes[2].set_title(r"H5$-$H (H2 \& H4)")
+         mlabel(r"H$^{5}$$-$H",      inter_HN_dbl),   "darkorange", LETTER_COLOUR)
+    axes[0].set_title(rf"O(urea)$-$[H$^{2}$ \& H$^{4}$]") # rf"[CH2N {THR_OU_HCH2N} \AA, OH {THR_OU_HOH} \AA]")
+    axes[1].set_title(r"N(urea)$-$H (H$^{2}$ \& H$^{4}$)")
+    axes[2].set_title(r"H$^{5}$$-$H (H$^{2}$ \& H$^{4}$)")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
@@ -278,12 +278,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 
     # choline CH2-N H vs urea H(NH2) / C / N
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    hist(axes[0], inter_HCH2N_HN, mlabel(r"H2$-$H5",      inter_HCH2N_HN), "steelblue",  LETTER_COLOUR)
-    hist(axes[1], inter_HCH2N_Cu, mlabel(r"H2$-$C(urea)", inter_HCH2N_Cu), "darkorange", LETTER_COLOUR)
-    hist(axes[2], inter_HCH2N_Nu, mlabel(r"H2$-$N(urea)", inter_HCH2N_Nu), "seagreen",   LETTER_COLOUR)
-    axes[0].set_title(r"H2$-$H5")
-    axes[1].set_title(r"H2$-$C(urea)")
-    axes[2].set_title(r"H2$-$N(urea)")
+    hist(axes[0], inter_HCH2N_HN, mlabel(r"H$^{2}$$-$H$^{5}$",      inter_HCH2N_HN), "steelblue",  LETTER_COLOUR)
+    hist(axes[1], inter_HCH2N_Cu, mlabel(r"H$^{2}$$-$C(urea)", inter_HCH2N_Cu), "darkorange", LETTER_COLOUR)
+    hist(axes[2], inter_HCH2N_Nu, mlabel(r"H$^{2}$$-$N(urea)", inter_HCH2N_Nu), "seagreen",   LETTER_COLOUR)
+    axes[0].set_title(r"H$^{2}$$-$H$^{5}$")
+    axes[1].set_title(r"H$^{2}$$-$C(urea)")
+    axes[2].set_title(r"H$^{2}$$-$N(urea)")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")
@@ -296,12 +296,12 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
 
     # choline CH2-O H vs urea H(NH2) / C / N
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
-    hist(axes[0], inter_HCH2O_HN, mlabel(r"H3$-$H5",      inter_HCH2O_HN), "steelblue",  LETTER_COLOUR)
-    hist(axes[1], inter_HCH2O_Cu, mlabel(r"H3$-$C(urea)", inter_HCH2O_Cu), "darkorange", LETTER_COLOUR)
-    hist(axes[2], inter_HCH2O_Nu, mlabel(r"H3$-$N(urea)", inter_HCH2O_Nu), "seagreen",   LETTER_COLOUR)
-    axes[0].set_title(r"H3$-$H5")
-    axes[1].set_title(r"H3$-$C(urea)")
-    axes[2].set_title(r"H3$-$N(urea)")
+    hist(axes[0], inter_HCH2O_HN, mlabel(r"H$^{3}$$-$H$^{5}$",      inter_HCH2O_HN), "steelblue",  LETTER_COLOUR)
+    hist(axes[1], inter_HCH2O_Cu, mlabel(r"H$^{3}$$-$C(urea)", inter_HCH2O_Cu), "darkorange", LETTER_COLOUR)
+    hist(axes[2], inter_HCH2O_Nu, mlabel(r"H$^{3}$$-$N(urea)", inter_HCH2O_Nu), "seagreen",   LETTER_COLOUR)
+    axes[0].set_title(r"H$^{3}$$-$H$^{5}$")
+    axes[1].set_title(r"H$^{3}$$-$C(urea)")
+    axes[2].set_title(r"H$^{3}$$-$N(urea)")
     for ax in axes:
         ax.set_xlabel(r"distance (\AA)")
         ax.set_ylabel("density")

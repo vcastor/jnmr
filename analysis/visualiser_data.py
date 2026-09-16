@@ -251,10 +251,10 @@ for variant, label, color in VARIANTS:
     inter_data.append((label, j, color, j_stp, cubic_mean(j) if j.size else 0.0))
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
-    plot_overlay(intra_data, "Intramolecular J coupling (CH2-CH2)",
+    plot_overlay(intra_data, r"Intramolecular J coupling (H$^{2}$-H$^{3}$)",
                  f"hist_intra{SUFFIX}", exp_mean=EXP_INTRA, exp_std=EXP_INTRA_ERR,
                  value_precision=2)
-    plot_overlay(inter_data, "Intermolecular J coupling (NH2-CH3)",
+    plot_overlay(inter_data, r"Intermolecular J coupling (H$^{1}$-H$^{5}$)",
                  f"hist_inter{SUFFIX}", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR,
                  value_precision=3)
 

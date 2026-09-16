@@ -69,12 +69,12 @@ print_stats(j, f"C H {VARIANT.replace('_', ' ')}")
 
 # Each responding H sits on one choline group; split every stat/plot by that group.
 # Console tags are the raw DB h_type; the LaTeX labels feed the plot legends.
-# H1-H5 shorthand in the legends (H1=CH3, H2=CH2-N, H3=CH2-O, H4=OH). DB h_type unchanged.
+# H$^{1}$-H$^{5}$ shorthand in the legends (H$^{1}$=CH3, H$^{2}$=CH2-N, H$^{3}$=CH2-O, H$^{4}$=OH). DB h_type unchanged.
 TYPES = [
-    ("H(CH3)",  r"C$-$H1", "tab:blue"),
-    ("H(CH2N)", r"C$-$H2", "tab:green"),
-    ("H(CH2O)", r"C$-$H3", "tab:orange"),
-    ("H(O)",    r"C$-$H4", "tab:red"),
+    ("H(CH3)",  r"C$-$H$^{1}$", "tab:blue"),
+    ("H(CH2N)", r"C$-$H$^{2}$", "tab:green"),
+    ("H(CH2O)", r"C$-$H$^{3}$", "tab:orange"),
+    ("H(O)",    r"C$-$H$^{4}$", "tab:red"),
 ]
 if any(h is not None for h in htype):
     print("  per H type (|J|):")

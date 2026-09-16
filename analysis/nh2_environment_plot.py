@@ -20,7 +20,7 @@ contact = c["contact"]
 COLOUR = {'Cl': "seagreen", 'Och': "mediumpurple", 'Ou': "steelblue",
           'H1': "darkorange", 'H2': "crimson", 'H3': "tomato", 'H4': "gray",
           'H5': "black"}
-LABEL  = {'Cl': r"Cl$^-$", 'Och': r"O(choline)", 'Ou': r"O(urea)", 'H1': r"H1"}
+LABEL  = {'Cl': r"Cl$^-$", 'Och': r"O(choline)", 'Ou': r"O(urea)", 'H1': r"H$^{1}$"}
 
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
@@ -28,13 +28,13 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     for k in ('Cl', 'Och', 'Ou'):
         hist(axes[0], d_acc[k], mlabel(LABEL[k], d_acc[k]), COLOUR[k], LETTER_COLOUR)
     axes[0].axvline(contact, color=LETTER_COLOUR, ls=':', linewidth=1.2)
-    axes[0].set_title(r"H5$\cdots$acceptor (nearest)")
+    axes[0].set_title(r"H$^{5}$$\cdots$acceptor (nearest)")
     axes[0].set_xlabel(r"distance (\AA)")
     axes[0].set_ylabel("density")
     axes[0].legend(loc='upper right')
 
     hist(axes[1], d_acc['H1'], mlabel(LABEL['H1'], d_acc['H1']), COLOUR['H1'], LETTER_COLOUR)
-    axes[1].set_title(r"H5$\cdots$H1 (nearest, the NH$_2$-CH$_3$ contact)")
+    axes[1].set_title(r"H$^{5}$$\cdots$H$^{1}$ (nearest, the NH$_2$-CH$_3$ contact)")
     axes[1].set_xlabel(r"distance (\AA)")
     axes[1].set_ylabel("density")
     axes[1].legend(loc='upper right')
@@ -56,7 +56,7 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
                    color=COLOUR.get(tag, "gray"), label=rf"{tag} (n={len(rows)})")
     ax.set_xlabel(r"distance (\AA)")
     ax.set_ylabel(r"$\rho_{BCP}$ (au)")
-    ax.set_title(r"H5 bond critical points")
+    ax.set_title(r"H$^{5}$ bond critical points")
     ax.legend(loc='upper right')
     style_axes(ax, LETTER_COLOUR, TRANSPARENT)
     fig.tight_layout()

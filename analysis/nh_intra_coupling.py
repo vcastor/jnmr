@@ -60,13 +60,13 @@ if not clean:
 j = np.abs(np.array([r[4] for r in clean]))
 d = np.array([r[3] for r in clean])
 
-print_stats(j, f"N-H5 intra-urea {VARIANT.replace('_', ' ')}")
+print_stats(j, f"N-H$^{5}$ intra-urea {VARIANT.replace('_', ' ')}")
 
 # The urea N couples to its own two bonded H's (1J) and the two on the other N
 # (geminal, through 2/3 bonds); the bond length separates the two groups cleanly.
 TYPES = [
-    (d < NH_BOND,  r"N$-$H5 (bonded)",   "tab:blue"),
-    (d >= NH_BOND, r"N$\cdots$H5 (other N)", "tab:orange"),
+    (d < NH_BOND,  r"N$-$H$^{5}$ (bonded)",   "tab:blue"),
+    (d >= NH_BOND, r"N$\cdots$H$^{5}$ (other N)", "tab:orange"),
 ]
 print("  per pair type (|J|):")
 for m, lbl, _ in TYPES:
@@ -96,7 +96,7 @@ for lc, transparent, suffix in PLOT_STYLES:
         ax.axvline(cm, color=col, linestyle=':', linewidth=1.2)
     ax.set_xlabel(r"$|J_{\mathrm{NH}}|$ (Hz)")
     ax.set_ylabel("density")
-    ax.set_title("N(urea) - H5 intra-urea coupling")
+    ax.set_title("N(urea) - H$^{5}$ intra-urea coupling")
     ax.set_xlim(left=0)
 
     style_axes(ax, lc, transparent)

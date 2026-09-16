@@ -81,12 +81,12 @@ print_stats(j, f"N {VARIANT.replace('_', ' ')}")
 # [H(CH2-N)/H(CH2-O)] and the two CH2 carbons [C(CH2-N)/C(CH2-O)]; split every
 # stat/plot by that responder group. Console tags are the raw DB resp_type; the LaTeX
 # labels feed the plot legends.
-# H1-H5 shorthand in the legends (H1=CH3, H2=CH2-N, H3=CH2-O); the CH2 carbons are not
+# H$^{1}$-H$^{5}$ shorthand in the legends (H$^{1}$=CH3, H$^{2}$=CH2-N, H$^{3}$=CH2-O); the CH2 carbons are not
 # hydrogens, so they keep a descriptive C(CH2-*) label. DB resp_type values are unchanged.
 TYPES = [
-    ("H(CH3)",  r"N$-$H1",                    "tab:blue"),
-    ("H(CH2N)", r"N$-$H2",                    "tab:green"),
-    ("H(CH2O)", r"N$-$H3",                    "tab:orange"),
+    ("H(CH3)",  r"N$-$H$^{1}$",                    "tab:blue"),
+    ("H(CH2N)", r"N$-$H$^{2}$",                    "tab:green"),
+    ("H(CH2O)", r"N$-$H$^{3}$",                    "tab:orange"),
     ("C(CH2N)", r"N$-$C($\mathrm{CH_2}$-N)",  "tab:red"),
     ("C(CH2O)", r"N$-$C($\mathrm{CH_2}$-O)",  "tab:purple"),
 ]

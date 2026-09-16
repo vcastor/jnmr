@@ -251,25 +251,25 @@ def plot_bcp_grid(bonds, fname):
 # every significant urea–choline BCP category. The two O(urea)–H(CH2) flavours are
 # merged into one panel (circle vs X marker), likewise N(urea)–H(CH2); the
 # N(urea)–H(OH) panel is intentionally omitted.
-# H-type shorthand (see hassan_functions/params.py): H1=CH3, H2=CH2-N, H3=CH2-O,
-# H4=OH, H5=NH2. The merged CH2 panels carry H2 (circle) and H3 (triangle).
-o_hch2_series = [(o_hch2_N, "H2", CIRCLE),
-                 (o_hch2_O, "H3", TRIANGLE)]
-n_hch2_series = [(other_by_type.get("urea N - choline H(CH2N)", []), "H2", CIRCLE),
-                 (other_by_type.get("urea N - choline H(CH2O)", []), "H3", TRIANGLE)]
+# H-type shorthand (see hassan_functions/params.py): H$^{1}$=CH3, H$^{2}$=CH2-N, H$^{3}$=CH2-O,
+# H$^{4}$=OH, H$^{5}$=NH2. The merged CH2 panels carry H$^{2}$ (circle) and H$^{3}$ (triangle).
+o_hch2_series = [(o_hch2_N, "H$^{2}$", CIRCLE),
+                 (o_hch2_O, "H$^{3}$", TRIANGLE)]
+n_hch2_series = [(other_by_type.get("urea N - choline H(CH2N)", []), "H$^{2}$", CIRCLE),
+                 (other_by_type.get("urea N - choline H(CH2O)", []), "H$^{3}$", TRIANGLE)]
 
 CHOLINE_BONDS = [
-    (r"N(urea) – H1",    [(nh2_ch3, None, CIRCLE)]),
-    (r"O(urea) – H2/H3", o_hch2_series),
-    (r"O(urea) – H4",    [(o_hoh, None, CIRCLE)]),
-    (r"H5 – O(OH)",      [(other_by_type.get("urea H(N) - choline O", []),   None, CIRCLE)]),
-    (r"O(urea) – H1",    [(other_by_type.get("urea O - choline H(CH3)", []), None, CIRCLE)]),
-    (r"N(urea) – H2/H3", n_hch2_series),
+    (r"N(urea) – H$^{1}$",    [(nh2_ch3, None, CIRCLE)]),
+    (r"O(urea) – H$^{2}$/H$^{3}$", o_hch2_series),
+    (r"O(urea) – H$^{4}$",    [(o_hoh, None, CIRCLE)]),
+    (r"H$^{5}$ – O(OH)",      [(other_by_type.get("urea H(N) - choline O", []),   None, CIRCLE)]),
+    (r"O(urea) – H$^{1}$",    [(other_by_type.get("urea O - choline H(CH3)", []), None, CIRCLE)]),
+    (r"N(urea) – H$^{2}$/H$^{3}$", n_hch2_series),
 ]
 
 # significant urea-urea categories (the N-H···O / N-H···N hydrogen bonds),
 # most-populated first.
-_uu = lambda t: "H5" if t == "H(N)" else t   # urea NH hydrogen -> H5 shorthand
+_uu = lambda t: "H$^{5}$" if t == "H(N)" else t   # urea NH hydrogen -> H$^{5}$ shorthand
 UREA_BONDS = [(f"urea {_uu(L.split(' - ')[0])} – urea {_uu(L.split(' - ')[1])}",
                [(uu_by_type[L], None, CIRCLE)])
               for L in sorted(uu_sig_labels, key=lambda L: -len(uu_by_type[L]))]
@@ -281,9 +281,9 @@ plot_bcp_grid(UREA_BONDS,    "qtaim_distance_urea_urea")
 # ── plot: QTAIM net-charge histogram, CH2-N vs CH2-O ──────────────────────
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.hist(q_Nside, bins=40, color=COLOUR_CH2N, edgecolor="black", alpha=0.5,
-        density=True, label="H2")
+        density=True, label="H$^{2}$")
 ax.hist(q_Oside, bins=40, color=COLOUR_CH2O, edgecolor="black", alpha=0.5,
-        density=True, label="H3")
+        density=True, label="H$^{3}$")
 
 sns.kdeplot(q_Nside, ax=ax, color=COLOUR_CH2N, linewidth=2)
 sns.kdeplot(q_Oside, ax=ax, color=COLOUR_CH2O, linewidth=2)
@@ -339,9 +339,9 @@ if fN.size and fO.size:
             n, o = fN[:, col], fO[:, col]
             d = cohens_d(n, o)
             ax.hist(n, bins=30, color=COLOUR_CH2N, edgecolor="black", alpha=0.45,
-                    density=True, label=rf"H2: {n.mean():+.4f}$\pm${n.std():.4f}")
+                    density=True, label=rf"H$^{2}$: {n.mean():+.4f}$\pm${n.std():.4f}")
             ax.hist(o, bins=30, color=COLOUR_CH2O, edgecolor="black", alpha=0.45,
-                    density=True, label=rf"H3: {o.mean():+.4f}$\pm${o.std():.4f}")
+                    density=True, label=rf"H$^{3}$: {o.mean():+.4f}$\pm${o.std():.4f}")
             sns.kdeplot(n, ax=ax, color=COLOUR_CH2N, linewidth=2)
             sns.kdeplot(o, ax=ax, color=COLOUR_CH2O, linewidth=2)
             ax.axvline(n.mean(), color=COLOUR_CH2N, linestyle=":", linewidth=1.2)
@@ -351,7 +351,7 @@ if fN.size and fO.size:
             ax.set_ylabel("density")
             ax.legend(fontsize=FS_LEGEND)
             style_axes(ax, LETTER_COLOUR, TRANSPARENT)
-        fig.suptitle("CH$_2$ hydrogens: Conceptual-DFT reactivity, H2 vs H3",
+        fig.suptitle("CH$_2$ hydrogens: Conceptual-DFT reactivity, H$^{2}$ vs H$^{3}$",
                      color=LETTER_COLOUR, fontsize=FS_BOX)
         fig.tight_layout()
         save_fig(fig, f"{PLOT_DIR}/qtaim_fukui_ch2{SUFFIX}", TRANSPARENT)

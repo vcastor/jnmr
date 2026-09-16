@@ -25,17 +25,17 @@ BCP_COLOUR = {'H5': "seagreen", 'H4': "mediumpurple", 'H1': "steelblue",
 for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
 
-    hist(axes[0], d_site['H5'], mlabel(r"H5", d_site['H5']), "seagreen",     LETTER_COLOUR)
-    hist(axes[0], d_site['H4'], mlabel(r"H4", d_site['H4']), "mediumpurple", LETTER_COLOUR)
+    hist(axes[0], d_site['H5'], mlabel(r"H$^{5}$", d_site['H5']), "seagreen",     LETTER_COLOUR)
+    hist(axes[0], d_site['H4'], mlabel(r"H$^{4}$", d_site['H4']), "mediumpurple", LETTER_COLOUR)
     axes[0].axvline(contact, color=LETTER_COLOUR, ls=':', linewidth=1.2)
     axes[0].set_title(r"Cl$^-\cdots$H donors (nearest)")
     axes[0].set_xlabel(r"distance (\AA)")
     axes[0].set_ylabel("density")
     axes[0].legend(loc='upper right')
 
-    hist(axes[1], d_site['H1'], mlabel(r"H1", d_site['H1']), "steelblue",  LETTER_COLOUR)
-    hist(axes[1], d_site['H2'], mlabel(r"H2", d_site['H2']), "darkorange", LETTER_COLOUR)
-    hist(axes[1], d_site['H3'], mlabel(r"H3", d_site['H3']), "crimson",    LETTER_COLOUR)
+    hist(axes[1], d_site['H1'], mlabel(r"H$^{1}$", d_site['H1']), "steelblue",  LETTER_COLOUR)
+    hist(axes[1], d_site['H2'], mlabel(r"H$^{2}$", d_site['H2']), "darkorange", LETTER_COLOUR)
+    hist(axes[1], d_site['H3'], mlabel(r"H$^{3}$", d_site['H3']), "crimson",    LETTER_COLOUR)
     axes[1].set_title(r"Cl$^-\cdots$H choline C$-$H (nearest)")
     axes[1].set_xlabel(r"distance (\AA)")
     axes[1].set_ylabel("density")

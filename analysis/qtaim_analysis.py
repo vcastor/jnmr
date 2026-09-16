@@ -13,8 +13,7 @@ from hassan_functions.constants import FORMULAS
 from hassan_functions.cache     import save_cache
 
 CLUSTERS_DIR = "clusters"
-QTAIM_DIR    = "/Users/vcastor/Desktop/backup_qtaimcdft/qtaim" #tmp
-# QTAIM_DIR    = "amsoutput/qtaim"
+QTAIM_DIR    = "amsoutput/qtaim"
 CDFT_DIR     = "amsoutput/cdft"   # Conceptual-DFT outputs (Fukui functions)
 BP_HEADER    = "BOND PATHS (BP) AND PROPERTIES ALONG THEM ARE WRITTEN TO TAPE21"
 SPECIES      = ['urea', 'choline', 'chloride']
