@@ -43,11 +43,6 @@ def get_processed_steps(cursor, basis_cont):
     return [row[0] for row in cursor.fetchall()]
 
 def collect_j_values(cursor, steps, table_type, basis_cont, main_only=False):
-    """Return (|J| array, owning-snapshot array) across interactions over all steps.
-    The snapshot ids travel with the values because the snapshot, not the individual
-    H-H pair, is the independent sampling unit: pairs within one snapshot share a
-    geometry and must be resampled together in any error estimate.
-"""
     j_col = f"J_{basis_cont}"
     all_values, all_steps = [], []
     for n_step in steps:
@@ -257,27 +252,6 @@ for LETTER_COLOUR, TRANSPARENT, SUFFIX in PLOT_STYLES:
     plot_overlay(inter_data, r"Intermolecular J coupling (H$^{1}$-H$^{5}$)",
                  f"hist_inter{SUFFIX}", exp_mean=EXP_INTER, exp_std=EXP_INTER_ERR,
                  value_precision=3)
-
-# # Sensitivity of effective J to power-mean exponent (TZ2P_FC reference)
-# basis_cont = "TZ2P_FC"
-# steps  = get_processed_steps(cursor, basis_cont)
-# jvals  = collect_j_values(cursor, steps, "inter", basis_cont)
-# ps     = np.arange(1, 6.1, 0.25)
-# means  = [cubic_mean(jvals, p=p) if jvals.size else 0 for p in ps]
-# fig, ax = plt.subplots(figsize=(8, 5))
-# ax.plot(ps, means, "o-", color="darkorange")
-# ax.set_xlabel("Power mean exponent p")
-# ax.set_ylabel("Effective J (Hz)")
-# ax.set_title("Sensitivity of effective J to power mean exponent")
-# ax.axhline(EXP_INTER, color=LETTER_COLOUR, ls="--",
-#            label=f"Exp = {EXP_INTER}±{EXP_INTER_ERR} Hz")
-# ax.axhspan(EXP_INTER-EXP_INTER_ERR, EXP_INTER+EXP_INTER_ERR,
-#            color=LETTER_COLOUR, alpha=0.12)
-# ax.legend()
-# style_axes(ax)
-# fig.tight_layout()
-# fig.savefig(f"{PLOT_DIR}/j_vs_power.pdf", dpi=150, transparent=TRANSPARENT)
-# plt.close(fig)
 
 conn.close()
 

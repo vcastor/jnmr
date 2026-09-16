@@ -15,7 +15,6 @@ def normalise_symbol(sym):
     return sym[0].upper() + sym[1:].lower()
 
 def read_xyz(path):
-    """Plain xyz reader, returns (symbols, coords)."""
     lines  = path.read_text().splitlines() if hasattr(path, 'read_text') else open(path).read().splitlines()
     natoms = int(lines[0].strip())
     symbols, coords = [], []
@@ -60,12 +59,6 @@ def read_labeled_matrix(path, header):
     return atom_labels, matrix
 
 def read_qtaim_charges(path):
-    """{atom_number: net_charge} from a QTAIM .out file.
-
-    Block starts 2 lines after CHARGE_HEADER. Each data row has 7 whitespace
-    fields: atom number at position 0, net charge at position 4. The table
-    ends on the first line whose split() length differs from 7.
-    """
     with open(path) as f:
         lines = f.readlines()
     start = next(i for i, l in enumerate(lines) if CHARGE_HEADER in l) + 2
@@ -78,11 +71,6 @@ def read_qtaim_charges(path):
     return charges
 
 def read_cdft_fukui(path):
-    """{atom_number: (f+, f-, f0, f2)} from a ConceptualDFT .out — the condensed Fukui
-    functions in the 'ATOMIC DESCRIPTORS: CANONICAL ENSEMBLE' block (QTAIM partition):
-    f+ (nucleophilic attack), f- (electrophilic attack), f0 (radical) and f2 (dual
-    descriptor). Atom numbers are absolute (cluster_id), matching the coupling atoms.
-    Returns {} if the block is absent (an incomplete / failed CDFT run)."""
     with open(path) as f:
         lines = f.readlines()
     start = next((i for i, l in enumerate(lines) if CDFT_FUKUI_HEADER in l), None)

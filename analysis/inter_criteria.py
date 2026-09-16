@@ -1,9 +1,4 @@
 #!/usr/bin/python3
-"""Two trial selections for the inter J_HH, per variant, vs exp:
-A) contacts with a real N...H-C interaction: an NH2-CH3 contact qualifies when its
-   closest CH3 H sits within NHC_CUT of the urea N; that anchor H is excluded and of
-   the remaining NH2 x CH3 pairs (4) only the strongest |J| per contact is kept.
-B) per snapshot the strongest |J|, averaged across snapshots."""
 import os
 import sys
 import glob

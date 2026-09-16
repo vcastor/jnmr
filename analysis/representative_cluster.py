@@ -1,9 +1,4 @@
 #!$AMSBIN/plams
-"""Find the smallest cluster (few molecules) showing every main interaction at
-once — Cl-H1, H2/H3 to the urea O/N, O(urea)-H4, NH2-CH3, Ch-Ch, urea-urea,
-Cl-H4, Cl-H5 — for the reduced visualisation the experimental team asked for.
-Prints the ranking and writes the winner as repr_MDStep<n>.xyz plus
-_noCh / _noUrea variants (cwd)."""
 import os
 import sys
 import glob
@@ -48,36 +43,27 @@ def motif_distances(mol_data):
     u_n = [a for s in u_sites for a in s['Nurea']]
 
     m = {}
-    # chloride against the choline methyl H's (top Cl BCP partner)
     m['ClH1'] = dmin([(cl, h) for cl in cls for h in h1])
-    # choline CH2 H's against the urea O/N
     m['H2Urea'] = dmin([(t, h) for t in u_o + u_n
                         for s in ch_sites for h in s['H2']])
     m['H3Urea'] = dmin([(t, h) for t in u_o + u_n
                         for s in ch_sites for h in s['H3']])
-    # urea N against each choline H type
     m['NH1'] = dmin([(n, h) for n in u_n for h in h1])
     m['NH2'] = dmin([(n, h) for n in u_n
                      for s in ch_sites for h in s['H2']])
     m['NH3'] = dmin([(n, h) for n in u_n
                      for s in ch_sites for h in s['H3']])
-    # urea C=O accepting the choline OH
     m['ChUrea'] = dmin([(o, h) for o in u_o
                         for s in ch_sites for h in s['H4']])
-    # the NH2-CH3 J contact
     m['NH2CH3'] = dmin([(a, b) for a in h5 for b in h1])
-    # choline hydroxyl O accepting from another choline (H1 or H4)
     m['ChCh'] = dmin([(o, h) for ci, o in enumerate(ch_o) if o is not None
                       for cj, s in enumerate(ch_sites) if cj != ci
                       for h in s['H1'] + s['H4']])
-    # urea O accepting another urea's NH
     m['UreaUrea'] = dmin([(o, h) for ui, o in enumerate(u_o)
                           for uj, s in enumerate(u_sites) if uj != ui
                           for h in s['H5']])
-    # chloride accepting the choline OH
     m['ClCh'] = dmin([(cl, h) for cl in cls
                       for s in ch_sites for h in s['H4']])
-    # chloride accepting the urea NH
     m['ClUrea'] = dmin([(cl, h) for cl in cls for h in h5])
     return m
 

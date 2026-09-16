@@ -2,13 +2,16 @@ plams_workdir*
 analysis/cache/
 *.rkf
 *.xyz
+!visual_clusters/*.xyz
 *.run
 *.sl
 *.txt
 *.out
 *.swp
 *.pdf
+!poster.pdf
 *.png
+!poster.png
 *.gjf
 *.claude/
 *.DS_Store

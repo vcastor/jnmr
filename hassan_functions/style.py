@@ -16,9 +16,6 @@ PRESETS = {
 }
 
 def apply_style(preset="default", fonts=True):
-    """Set matplotlib rcParams from a preset. fonts=False keeps only the usetex /
-    LaTeX-preamble part and leaves matplotlib's default font sizes untouched (for
-    dense multi-panel figures that would overflow at the preset sizes)."""
     s = PRESETS[preset]
     plt.rcParams["text.usetex"]         = s["usetex"]
     plt.rcParams["text.latex.preamble"] = s["preamble"]

@@ -1,8 +1,4 @@
 #!$AMSBIN/plams
-"""Where the urea NH2 hydrogens point: per H5 the nearest atom of each acceptor
-class present in its cluster (geometry, every cluster xyz), plus every H5 BCP from
-the QTAIM outputs. Writes analysis/cache/nh2_environment.pkl;
-nh2_environment_plot.py draws it."""
 import os
 import sys
 import glob

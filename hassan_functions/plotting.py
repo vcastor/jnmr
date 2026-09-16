@@ -3,14 +3,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 PLOT_STYLES = [('black', False, ''), ('black', True, '_transparent')]
-
-# transparent variant: 60% white panel behind the data so it stays readable on any
-# background (full transparency is avoided for reading purposes)
 TRANSPARENT_BG = (1.0, 1.0, 1.0, 0.6)
 
 def save_fig(fig, path_no_ext, transparent):
-    """Opaque PDF, or (transparent mode) an SVG whose margin is transparent while the
-    axes keep the 60% white panel set by style_axes."""
     if transparent:
         fig.savefig(f"{path_no_ext}.svg", facecolor='none', edgecolor='none')
     else:

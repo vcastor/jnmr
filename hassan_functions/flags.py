@@ -34,17 +34,13 @@ def env_int(name, default=0):
     return int(os.environ.get(name, default))
 
 def env_list(name):
-    """Comma-separated env-var flag as a list, or None if unset."""
     v = os.environ.get(name)
     return v.split(",") if v else None
 
 def partition_override():
-    """CRIANN partition from PARTITION=<p>, or None to keep each variant's default."""
     return os.environ.get("PARTITION")
 
 def verbose():
-    """True only with -v on the command line or VERBOSE=1 — progress prints are
-    opt-in, silent by default."""
     import sys
     return "-v" in sys.argv or bool(os.environ.get("VERBOSE"))
 
@@ -94,8 +90,6 @@ def cluster_composition(xyz_file):
     return (n_urea, n_choline, n_cl)
 
 def composition_allowed(xyz_file, allowed):
-    """True if the cluster may be submitted under the current size restriction.
-    `allowed` of None lifts the restriction entirely."""
     if allowed is None:
         return True
     return cluster_composition(xyz_file) in allowed

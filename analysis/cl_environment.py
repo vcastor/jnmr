@@ -1,8 +1,4 @@
 #!$AMSBIN/plams
-"""Where the chlorides sit: per Cl the nearest atom of every named site present in
-its cluster and the contacts within CONTACT (geometry, every cluster xyz), plus
-every Cl BCP from the QTAIM outputs. Writes analysis/cache/cl_environment.pkl;
-cl_environment_plot.py draws it."""
 import os
 import sys
 import glob

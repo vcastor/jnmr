@@ -1,13 +1,4 @@
 #!$AMSBIN/plams
-"""3x3 species-interaction table (choline / urea / chloride), twice: geometric
-donor-H...acceptor contacts over every cluster xyz, and every inter-molecular BCP
-over the QTAIM outputs (the full picture: Cl-Cl, Cl...N and any other contact a
-distance-and-H criterion misses), each with the per-H-type zoom, an H5 zoom by
-acceptor site (O(urea) / N(urea) / O(Ch) / Cl) and, for the BCPs, per-cell distance
-stats. The species tables count each unique pair once and
-normalise to a single global 100% (symmetric: Ch-urea IS urea-Ch); only the
-per-H-type zoom rows are directional and sum to 100% per row.
-Writes analysis/cache/interaction_matrix.pkl."""
 import os
 import sys
 import glob

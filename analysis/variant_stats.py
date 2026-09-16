@@ -1,8 +1,4 @@
 #!/usr/bin/python3
-"""Estimator diagnostics for the INTER couplings only — the BCP-uncertain
-through-space case this analysis exists for. Per variant: p-sweep of the power mean,
-the exponent p* and scale factor X reproducing experiment, and zero-inflation stats.
-TZ2P_FC and TZ2PJ_all printed as reference."""
 import os
 import sys
 import sqlite3
@@ -40,7 +36,6 @@ def get_processed_steps(cursor, variant):
     return [row[0] for row in cursor.fetchall()]
 
 def collect(cursor, steps, table_type, variant):
-    """(|J|, snapshot) arrays."""
     j_col = f"J_{variant}"
     vals, stp = [], []
     for n_step in steps:
@@ -56,8 +51,6 @@ def collect(cursor, steps, table_type, variant):
     return j[keep], s[keep]
 
 def p_star(j, target):
-    """Exponent where the power mean crosses the experimental value (monotonic in p),
-    or None when no p in the sweep reaches it — i.e. no exponent can fix the data."""
     if j.size == 0:
         return None
     means = np.array([cubic_mean(j, p=p) for p in PS])

@@ -1,7 +1,4 @@
 #!$AMSBIN/plams
-"""Choline fold: O(-H4)...H1 ring closure vs the same contact to ANOTHER choline.
-BCP evidence (QTAIM outputs) split intra/inter, then the intra-BCP distance range
-calibrates a geometry-only criterion applied to every cluster xyz."""
 import os
 import sys
 import glob
